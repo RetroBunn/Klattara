@@ -1,6 +1,6 @@
 # Klattara speech synthesizer driver for NVDA.
 #
-# Speech is synthesized on a background thread by klattara.dll, which sits
+# Speech is synthesized on a background thread by klattara.dll, in a folder
 # next to this file, and played through NVDA's own audio output. Synthesis
 # runs at hundreds of times real time, and audio is streamed in small
 # chunks, so speech starts at once.
@@ -34,7 +34,13 @@ from synthDriverHandler import synthDoneSpeaking, synthIndexReached
 
 addonHandler.initTranslation()
 
-DLL_PATH = os.path.join(os.path.dirname(__file__), "klattara.dll")
+# NVDA is 32-bit before 2026 and 64-bit from then on, so the add-on carries a
+# DLL for each and loads the one that matches the running NVDA.
+DLL_PATH = os.path.join(
+	os.path.dirname(__file__),
+	"x64" if ctypes.sizeof(ctypes.c_void_p) == 8 else "x86",
+	"klattara.dll",
+)
 SAMPLE_RATE = 22050
 BYTES_PER_SAMPLE = 2
 

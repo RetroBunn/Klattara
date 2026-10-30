@@ -1,0 +1,4 @@
+# Build Microsoft's C runtime into klattara.dll, so it loads in any program,
+# on any machine, without the Visual C++ Redistributable.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

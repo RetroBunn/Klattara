@@ -38,6 +38,13 @@ pub enum Token {
     Boundary(Boundary),
 }
 
+/// The longest word read as one, in characters; the rest of a longer run is
+/// the next word. The dictionary's longest word has 28 letters. Pronouncing a
+/// word takes time and memory that grow with the square of its length, so a
+/// long line of base64 took minutes to start speaking, and could not be
+/// cancelled until it did.
+const LONGEST_WORD: usize = 64;
+
 pub fn tokenize(text: &str) -> Vec<Token> {
     let chars: Vec<char> = text.chars().map(|c| if matches!(c, '\u{2019}' | '\u{2018}') { '\'' } else { c }).collect();
     let at = |i: usize| chars.get(i).copied().unwrap_or(' ');
@@ -49,7 +56,7 @@ pub fn tokenize(text: &str) -> Vec<Token> {
         if c.is_alphabetic() && at(i + 1) == '.' && at(i + 2).is_alphabetic() && at(i + 3) == '.' {
             // Single letters with periods: "e.g.", "U.S.A.".
             let mut letters = String::new();
-            while at(i).is_alphabetic() && at(i + 1) == '.' {
+            while at(i).is_alphabetic() && at(i + 1) == '.' && letters.len() < LONGEST_WORD {
                 letters.push(at(i));
                 i += 2;
             }
@@ -57,7 +64,7 @@ pub fn tokenize(text: &str) -> Vec<Token> {
             tokens.push(Token::Boundary(Boundary::Period));
         } else if c.is_alphabetic() {
             // Letters, with apostrophes inside words: "don't", "o'clock".
-            while at(i).is_alphabetic() || (at(i) == '\'' && at(i + 1).is_alphabetic()) {
+            while (at(i).is_alphabetic() || (at(i) == '\'' && at(i + 1).is_alphabetic())) && i - start < LONGEST_WORD {
                 i += 1;
             }
             let word: String = chars[start..i].iter().collect();
@@ -1561,6 +1568,28 @@ mod tests {
         assert_eq!(number_words("12", true), ["twelfth"]);
         assert_eq!(number_words("40", true), ["fortieth"]);
         assert!(say("the 3rd of May").contains("[TH ER1 D]"));
+    }
+
+    #[test]
+    fn a_very_long_run_of_letters_is_cut_into_words() {
+        let words = |text: &str| -> Vec<String> {
+            tokenize(text)
+                .into_iter()
+                .map(|t| match t {
+                    Token::Word(word) => word,
+                    other => panic!("{other:?}"),
+                })
+                .collect()
+        };
+        // The longest word in the dictionary, and the longest that stays whole.
+        assert_eq!(words("antidisestablishmentarianism").len(), 1);
+        assert_eq!(words(&"x".repeat(LONGEST_WORD)).len(), 1);
+        // Nothing is lost.
+        let parts = words(&"x".repeat(2 * LONGEST_WORD + 1));
+        assert_eq!(parts.iter().map(String::len).collect::<Vec<_>>(), [LONGEST_WORD, LONGEST_WORD, 1]);
+        // So also for runs of dotted letters, which are spelled.
+        let dotted = tokenize(&"a.".repeat(2 * LONGEST_WORD));
+        assert!(dotted.iter().all(|t| !matches!(t, Token::Dotted(d) if d.len() > LONGEST_WORD)));
     }
 
     #[test]

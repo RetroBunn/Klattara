@@ -7,7 +7,7 @@ use crate::synth::{Synth, VoiceSettings};
 use crate::text;
 use crate::timing::assign_durations;
 use crate::tracks;
-use crate::utterance::{ParseError, Phrase, Segment, notation, parse, segments};
+use crate::utterance::{Boundary, ParseError, Phrase, Segment, notation, parse, segments};
 
 /// The adjustable character of a voice.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -96,6 +96,70 @@ fn synth_settings(voice: &Voice) -> VoiceSettings {
     VoiceSettings { flutter: voice.flutter * voice.inflection.clamp(0.0, 1.0), volume: voice.volume }
 }
 
+/// Text longer than this many bytes is read piece by piece.
+const LONGEST_TEXT: usize = 16 * 1024;
+
+/// Cuts very long text into pieces to read one at a time, so that memory and
+/// the wait for speech to start, during which it cannot be cancelled, stay
+/// small however much text there is. A piece ends after a sentence if it can,
+/// or else at a space.
+fn pieces(text: &str) -> Vec<&str> {
+    let (mut pieces, mut rest) = (Vec::new(), text);
+    while rest.len() > LONGEST_TEXT {
+        let mut end = LONGEST_TEXT;
+        while !rest.is_char_boundary(end) {
+            end -= 1;
+        }
+        let head = &rest[..end];
+        let cut = head.rfind(". ").map(|at| at + 1).or_else(|| head.rfind(char::is_whitespace)).filter(|&at| at > 0);
+        let (piece, tail) = rest.split_at(cut.unwrap_or(end));
+        pieces.push(piece);
+        rest = tail;
+    }
+    pieces.push(rest);
+    pieces
+}
+
+/// No phrase runs longer than this many words: text with no punctuation gets
+/// a comma's pause here, as a reader would need a breath.
+const LONGEST_PHRASE: usize = 200;
+/// Long input is planned and rendered in batches of about this many words.
+const BATCH_WORDS: usize = 500;
+
+/// Groups phrases into batches to plan and render one at a time, so that
+/// speech starts at once and memory stays small however long the input is.
+/// As one plan, 200,000 words without punctuation needed a single block of
+/// 888 MB, and failing to get one in a 32-bit process ends the whole program.
+/// Each batch ends in a pause, so the next can start afresh, and input shorter
+/// than a batch stays as it is.
+fn batches(phrases: Vec<Phrase>) -> Vec<Vec<Phrase>> {
+    let (mut batches, mut batch, mut words) = (Vec::new(), Vec::new(), 0);
+    for phrase in phrases {
+        let boundary = phrase.boundary;
+        let mut left = phrase.words.len();
+        let mut rest = phrase.words.into_iter();
+        loop {
+            let piece: Vec<_> = rest.by_ref().take(LONGEST_PHRASE).collect();
+            left -= piece.len();
+            words += piece.len();
+            let full = words >= BATCH_WORDS;
+            let boundary = if left > 0 || (full && !boundary.has_pause()) { Boundary::Comma } else { boundary };
+            batch.push(Phrase { words: piece, boundary });
+            if full {
+                batches.push(std::mem::take(&mut batch));
+                words = 0;
+            }
+            if left == 0 {
+                break;
+            }
+        }
+    }
+    if !batch.is_empty() || batches.is_empty() {
+        batches.push(batch);
+    }
+    batches
+}
+
 /// Plans speech at the voice's rate.
 fn plan(phrases: &[Phrase], voice: &Voice) -> Vec<(f64, Frame)> {
     let (segments, compression) = timeline(phrases, voice.rate.clamp(0.25, 8.0));
@@ -152,15 +216,23 @@ pub fn speak_with(
     sample_rate: u32,
     on_audio: &mut dyn FnMut(&[f32]) -> bool,
 ) -> Result<bool, ParseError> {
-    let phrases = match reading {
-        Reading::Text => text::phrases_with(input, voice.expand_abbreviations, voice.phrase_prediction),
-        Reading::Spelled => text::spelled_phrases(input),
-        Reading::Phonemes => parse(input)?,
-    };
-    let frames = plan(&phrases, voice);
     let mut synth = Synth::new(sample_rate);
     synth.set_settings(synth_settings(voice));
-    Ok(tracks::render_with(&mut synth, &frames, on_audio))
+    // Phonetic input can't be cut anywhere: its words are in brackets.
+    let parts = if reading == Reading::Phonemes { vec![input] } else { pieces(input) };
+    for part in parts {
+        let phrases = match reading {
+            Reading::Text => text::phrases_with(part, voice.expand_abbreviations, voice.phrase_prediction),
+            Reading::Spelled => text::spelled_phrases(part),
+            Reading::Phonemes => parse(part)?,
+        };
+        for batch in batches(phrases) {
+            if !tracks::render_with(&mut synth, &plan(&batch, voice), on_audio) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
 }
 
 /// How text will be pronounced, in the bracketed ARPAbet notation that
@@ -186,6 +258,96 @@ mod tests {
         assert_eq!(flutter(0.0), 0.0);
         assert_eq!(flutter(1.0), Voice::default().flutter);
         assert_eq!(flutter(2.5), Voice::default().flutter);
+    }
+
+    #[test]
+    fn very_long_text_is_read_in_pieces() {
+        // Ordinary text, and no text at all, stay as they are.
+        assert_eq!(pieces(""), [""]);
+        assert_eq!(pieces("One. Two."), ["One. Two."]);
+        // After a sentence if it can; nothing is lost.
+        let text = "One more sentence here. ".repeat(3000);
+        let parts = pieces(&text);
+        assert!(parts.len() > 1 && parts.iter().all(|p| p.len() <= LONGEST_TEXT));
+        assert!(parts[..parts.len() - 1].iter().all(|p| p.ends_with('.')));
+        assert_eq!(parts.concat(), text);
+        // Else at a space, or anywhere between characters if there is none.
+        let text = "word ".repeat(10000);
+        assert!(pieces(&text)[1].starts_with(" word"));
+        let text = "\u{e9}".repeat(40000);
+        let parts = pieces(&text);
+        assert!(parts.len() > 1);
+        assert_eq!(parts.concat(), text);
+    }
+
+    #[test]
+    fn long_unbroken_text_starts_quickly() {
+        // Pronouncing one word this long used to take minutes.
+        let text = "TWFuIGlzIGRpc3Rpbmd1aXNoZWQ".repeat(10000);
+        let mut chunks = 0;
+        let done = speak_with(&text, Reading::Text, &Voice::default(), 22050, &mut |_| {
+            chunks += 1;
+            false
+        });
+        assert_eq!((done, chunks), (Ok(false), 1));
+    }
+
+    #[test]
+    fn ordinary_speech_is_one_batch() {
+        let text = "One, two, three. Four, five, six.";
+        let phrases = text::phrases_with(text, true, false);
+        assert_eq!(batches(phrases.clone()), [phrases]);
+        // Streaming makes exactly the audio of rendering it whole.
+        let voice = Voice::default();
+        let mut streamed = Vec::new();
+        let done = speak_with(text, Reading::Text, &voice, 22050, &mut |chunk| {
+            streamed.extend_from_slice(chunk);
+            true
+        });
+        assert_eq!(done, Ok(true));
+        assert_eq!(streamed, speak_text(text, &voice, 22050));
+    }
+
+    #[test]
+    fn long_input_is_planned_in_batches_that_end_in_pauses() {
+        let check = |text: &str, prediction: bool, total: usize| {
+            let parts = batches(text::phrases_with(text, true, prediction));
+            assert!(parts.len() >= total / (BATCH_WORDS + LONGEST_PHRASE), "{}", parts.len());
+            let mut seen = 0;
+            for batch in &parts {
+                let words: usize = batch.iter().map(|p| p.words.len()).sum();
+                seen += words;
+                assert!(words < BATCH_WORDS + LONGEST_PHRASE, "{words}");
+                assert!(batch.iter().all(|p| p.words.len() <= LONGEST_PHRASE));
+                assert!(batch.last().unwrap().boundary.has_pause());
+            }
+            assert_eq!(seen, total);
+        };
+        // No punctuation at all, with and without phrase prediction, whose
+        // phrases have no pauses of their own.
+        check(&"word ".repeat(5000), false, 5000);
+        check(&"the old man walked down the road toward the town ".repeat(500), true, 5000);
+        // The last piece keeps the sentence's own ending.
+        let parts = batches(text::phrases_with(&format!("{}word?", "word ".repeat(999)), true, false));
+        assert_eq!(parts.last().unwrap().last().unwrap().boundary, Boundary::Question);
+    }
+
+    #[test]
+    fn long_input_starts_at_once_and_can_stop() {
+        let (mut chunks, text) = (0, "word ".repeat(5000));
+        let done = speak_with(&text, Reading::Text, &Voice::default(), 22050, &mut |_| {
+            chunks += 1;
+            false
+        });
+        assert_eq!((done, chunks), (Ok(false), 1));
+        // Left to run, it says every batch.
+        let mut samples = 0;
+        let done = speak_with(&"word ".repeat(1200), Reading::Text, &Voice::default(), 22050, &mut |chunk| {
+            samples += chunk.len();
+            true
+        });
+        assert_eq!(done, Ok(true));
+        assert!(samples > 1200 * 22050 / 5, "{samples}");
     }
 
     #[test]

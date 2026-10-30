@@ -24,6 +24,14 @@
 extern "C" {
 #endif
 
+/* 32-bit Windows has several calling conventions. The DLL's functions and the
+ * audio callback all use cdecl, whatever the program's default. */
+#ifdef _WIN32
+#define KLATTARA_CALL __cdecl
+#else
+#define KLATTARA_CALL
+#endif
+
 #define KLATTARA_OK 0             /* Success. */
 #define KLATTARA_STOPPED 1        /* The audio callback stopped speech early. */
 #define KLATTARA_INVALID (-1)     /* Null pointer, value out of range, or bad phonetic input. */
@@ -35,49 +43,49 @@ extern "C" {
 
 typedef struct KlattaraEngine KlattaraEngine;
 
-typedef int (*KlattaraAudioCallback)(void *user, const int16_t *samples, int count);
+typedef int (KLATTARA_CALL *KlattaraAudioCallback)(void *user, const int16_t *samples, int count);
 
 /* The library version, such as "1.0.0". */
-const char *klattara_version(void);
+const char *KLATTARA_CALL klattara_version(void);
 
 /* Creates an engine at sample_rate Hz (8000 to 96000; 22050 recommended).
  * Returns NULL if the rate is out of range. */
-KlattaraEngine *klattara_create(int sample_rate);
+KlattaraEngine *KLATTARA_CALL klattara_create(int sample_rate);
 
 /* Frees an engine. NULL is ignored. */
-void klattara_destroy(KlattaraEngine *engine);
+void KLATTARA_CALL klattara_destroy(KlattaraEngine *engine);
 
 /* Speaking rate: 1.0 is about 200 words per minute, 2.0 twice as fast (0.25 to 8). */
-int klattara_set_rate(KlattaraEngine *engine, double rate);
+int KLATTARA_CALL klattara_set_rate(KlattaraEngine *engine, double rate);
 
 /* Base pitch in Hz (40 to 600; default 110). */
-int klattara_set_pitch(KlattaraEngine *engine, double hz);
+int KLATTARA_CALL klattara_set_pitch(KlattaraEngine *engine, double hz);
 
 /* Pitch movement: 0 is monotone, 1 normal, up to 2.5. */
-int klattara_set_inflection(KlattaraEngine *engine, double inflection);
+int KLATTARA_CALL klattara_set_inflection(KlattaraEngine *engine, double inflection);
 
 /* Volume: 0 is silent, 1 normal, up to 2. */
-int klattara_set_volume(KlattaraEngine *engine, double volume);
+int KLATTARA_CALL klattara_set_volume(KlattaraEngine *engine, double volume);
 
 /* Abbreviations in text: nonzero (the default) reads them in full, "Dr." as
  * "doctor" and "Calif." as "California"; zero reads them as written, "D R". */
-int klattara_set_abbreviations(KlattaraEngine *engine, int expand);
+int KLATTARA_CALL klattara_set_abbreviations(KlattaraEngine *engine, int expand);
 
 /* Phrase prediction: nonzero breaks long stretches of text without
  * punctuation into phrases, each with its own pitch contour and no pause;
  * zero (the default) reads each stretch as one phrase. */
-int klattara_set_phrase_prediction(KlattaraEngine *engine, int predict);
+int KLATTARA_CALL klattara_set_phrase_prediction(KlattaraEngine *engine, int predict);
 
 /* Speaks UTF-8 input, passing audio to callback in chunks as it is made.
  * reading is one of the KLATTARA_READ_ constants. Returns KLATTARA_OK,
  * KLATTARA_STOPPED, or an error. */
-int klattara_speak(KlattaraEngine *engine, const char *input, int reading,
-                   KlattaraAudioCallback callback, void *user);
+int KLATTARA_CALL klattara_speak(KlattaraEngine *engine, const char *input, int reading,
+                                 KlattaraAudioCallback callback, void *user);
 
 /* Writes how UTF-8 text will be pronounced, in bracketed ARPAbet, into
  * buffer if it fits in size bytes. Returns the size needed including the
  * terminating NUL, or an error. */
-int klattara_transcribe(const char *text, char *buffer, int size);
+int KLATTARA_CALL klattara_transcribe(const char *text, char *buffer, int size);
 
 #ifdef __cplusplus
 }

@@ -8,6 +8,7 @@ __pycache__/
 !/src/research/README.md
 # NVDA's source, cloned for reference and driver tests; a separate GPL repository.
 /nvda
+/nvda-release-*
 # Third-party test sets, downloaded for measurement only.
 /eval
 # TGSpeechBox, a separate repository, kept for reference.

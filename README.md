@@ -25,7 +25,7 @@ It ships as an add-on for the NVDA screen reader, and as a Windows library (klat
 
 ## Installing the NVDA add-on
 
-The add-on needs NVDA 2026.1 or later.
+The add-on needs NVDA 2025.1 or later, on Windows 10 or later. It works in both 32-bit NVDA, as NVDA was before 2026, and 64-bit NVDA.
 
 1. Download klattara-1.0.nvda-addon.
 2. Open the file while NVDA is running, and confirm that you want to install it.
@@ -46,7 +46,9 @@ The sliders map evenly onto the engine's values, as DECtalk's do. Rate goes from
 
 ## Using the library from other programs
 
-klattara.dll is a 64-bit Windows library. Its interface is declared in src/plat/windows/klattara.h. Every function catches internal errors and returns an error code instead of crashing the program that calls it. An engine may be used from any thread, but from only one thread at a time.
+klattara.dll is a Windows library, in 64-bit and 32-bit versions, for Windows 10 or later. It needs nothing else installed: Microsoft's C runtime is built in. Its interface is declared in src/plat/windows/klattara.h. Every function catches internal errors and returns an error code instead of crashing the program that calls it. An engine may be used from any thread, but from only one thread at a time. Text can be any length: very long text is read in pieces, so memory stays small and speech starts at once.
+
+On 32-bit Windows, the functions and the audio callback use the C calling convention (cdecl). The header says so for C and C++ programs; programs in other languages need to declare it themselves.
 
 ### The C interface
 
@@ -99,14 +101,20 @@ You need Rust 1.99 or later; the code uses the 2024 edition. To build the engine
 
     cargo build --release
 
-The DLL is written to target/release/klattara.dll.
+The DLL is written to target/release/klattara.dll. For the 32-bit version, add Rust's 32-bit target once, and build for it:
 
-To build the NVDA add-on, you also need Python. The build runs the driver's tests against NVDA's own source code, so clone NVDA into the project folder first:
+    rustup target add i686-pc-windows-msvc
+    cargo build --release -p klattara-windows --target i686-pc-windows-msvc
+
+That DLL is written to target/i686-pc-windows-msvc/release/klattara.dll.
+
+To build the NVDA add-on, you also need the 32-bit target above, and both 64-bit and 32-bit Python with the py launcher. The build tests each DLL on the NVDA that loads it, using NVDA's own source code: the 64-bit one on current NVDA, and the 32-bit one on NVDA 2025.1. So clone both into the project folder first:
 
     git clone --depth 1 https://github.com/nvaccess/nvda nvda
+    git clone --depth 1 --branch release-2025.1 https://github.com/nvaccess/nvda nvda-release-2025.1
     python src/plat/nvda/build.py
 
-That builds the DLL, tests the driver, and writes dist/klattara-1.0.nvda-addon.
+That builds both DLLs, tests the driver on each, and writes dist/klattara-1.0.nvda-addon, which carries both.
 
 To try the voice without NVDA, the say example writes a WAV file and prints the pronunciation it used:
 
@@ -114,7 +122,7 @@ To try the voice without NVDA, the say example writes a WAV file and prints the 
 
 ## Testing
 
-Run the unit tests with `cargo test --release`. They check the signal processing, durations, text reading and the C interface.
+Run the unit tests with `cargo test --release`. They check the signal processing, durations, text reading and the C interface. Add `--target i686-pc-windows-msvc` to run them in 32-bit.
 
 The tools in src/tools measure how clear the voice is, using a speech recognizer as a stand-in for a listener. They need a Python environment in .venv with faster-whisper and numpy installed.
 

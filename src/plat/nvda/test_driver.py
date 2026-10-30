@@ -1,19 +1,26 @@
 """Tests the NVDA driver outside NVDA, against the real klattara.dll and NVDA's
 own Python code.
 
-NVDA's source, a clone of https://github.com/nvaccess/nvda, is expected in the
-nvda folder of the project. The driver runs on NVDA's real synthDriverHandler,
-driverHandler, autoSettingsUtils, speech.commands, extensionPoints and
-baseObject. Only what needs a running NVDA is stood in for: the log, the
-configuration store, translations, the settings ring and voice dictionaries,
-and the audio player, which needs NVDA's compiled helper library. The
-stand-in player has the real one's signature and records what it is given.
+NVDA is 32-bit before 2026 and 64-bit from then on, so each DLL is tested on the
+NVDA that will load it: a 64-bit Python tests the 64-bit DLL on the clone of
+https://github.com/nvaccess/nvda in the nvda folder of the project, and a 32-bit
+Python tests the 32-bit DLL on NVDA 2025.1, in the nvda-release-2025.1 folder.
 
-Usage, from the project folder, after building the DLL:
-    python src/plat/nvda/test_driver.py
+The driver runs on NVDA's real synthDriverHandler, driverHandler,
+autoSettingsUtils, speech.commands, extensionPoints and baseObject. Only what
+needs a running NVDA is stood in for: the log, the configuration store,
+translations, the settings ring and voice dictionaries, and the audio player,
+which needs NVDA's compiled helper library. The stand-in player has the real
+one's signature, checked against NVDA's nvwave.py, and records what it is given.
+
+Usage, from the project folder, after building the DLLs:
+    py -3-64 src/plat/nvda/test_driver.py
+    py -3-32 src/plat/nvda/test_driver.py
 """
 
+import ast
 import builtins
+import ctypes
 import importlib.util
 import sys
 import threading
@@ -22,9 +29,17 @@ import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-NVDA_SOURCE = ROOT / "nvda" / "source"
 DRIVER = ROOT / "src" / "plat" / "nvda" / "addon" / "synthDrivers" / "klattara" / "__init__.py"
-DLL = ROOT / "target" / "release" / "klattara.dll"
+if ctypes.sizeof(ctypes.c_void_p) == 8:
+    ARCHITECTURE = "x64"
+    NVDA_SOURCE = ROOT / "nvda" / "source"
+    NVDA_CLONE = "git clone --depth 1 https://github.com/nvaccess/nvda nvda"
+    DLL = ROOT / "target" / "release" / "klattara.dll"
+else:
+    ARCHITECTURE = "x86"
+    NVDA_SOURCE = ROOT / "nvda-release-2025.1" / "source"
+    NVDA_CLONE = "git clone --depth 1 --branch release-2025.1 https://github.com/nvaccess/nvda nvda-release-2025.1"
+    DLL = ROOT / "target" / "i686-pc-windows-msvc" / "release" / "klattara.dll"
 
 events = []
 lock = threading.Lock()
@@ -88,7 +103,7 @@ class WavePlayer:
 def load_nvda():
     """Imports NVDA's real modules, with stand-ins for its runtime."""
     if not (NVDA_SOURCE / "synthDriverHandler.py").is_file():
-        raise SystemExit(f"NVDA's source is needed in {NVDA_SOURCE.parent}: git clone https://github.com/nvaccess/nvda")
+        raise SystemExit(f"NVDA's source is needed in {NVDA_SOURCE.parent}: {NVDA_CLONE}")
     sys.path.insert(0, str(NVDA_SOURCE))
     # NVDA installs these translation functions as builtins.
     builtins._ = lambda text: text
@@ -129,8 +144,23 @@ def load_driver():
     spec = importlib.util.spec_from_file_location("klattara_driver", DRIVER)
     driver = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(driver)
+    check(Path(driver.DLL_PATH).parent.name == ARCHITECTURE, f"this NVDA loads the {ARCHITECTURE} DLL")
     driver.DLL_PATH = str(DLL)
     return driver
+
+
+def check_stand_ins_match_nvda():
+    """The stand-in player proves nothing unless the real one offers the same,
+    so compare it with this NVDA's own code, and the output device setting too."""
+    tree = ast.parse((NVDA_SOURCE / "nvwave.py").read_text(encoding="utf-8"))
+    player = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "WavePlayer")
+    methods = {node.name: [arg.arg for arg in node.args.args] for node in player.body if isinstance(node, ast.FunctionDef)}
+    expected = ["self", "channels", "samplesPerSec", "bitsPerSample", "outputDevice"]
+    check(methods["__init__"][:5] == expected, f"NVDA's player opens as the driver expects: {methods['__init__']}")
+    check(methods["feed"][:4] == ["self", "data", "size", "onDone"], f"NVDA's player is fed as the driver expects: {methods['feed']}")
+    check({"idle", "stop", "pause", "close"} <= methods.keys(), "NVDA's player has the other methods the driver calls")
+    config_spec = (NVDA_SOURCE / "config" / "configSpec.py").read_text(encoding="utf-8")
+    check("[audio]\n\toutputDevice" in config_spec, "NVDA keeps the output device in its audio settings")
 
 
 def wait_for(kind, timeout=10.0):
@@ -170,6 +200,10 @@ def check(condition, message):
 
 
 def main():
+    # NVDA 2025.1 runs on Python 3.11, whichever Python runs these tests.
+    ast.parse(DRIVER.read_text(encoding="utf-8"), feature_version=(3, 11))
+    print("ok: the driver's syntax suits Python 3.11")
+    check_stand_ins_match_nvda()
     synthDriverHandler, commands = load_nvda()
     # NVDA's extension points hold handlers weakly; these are module functions.
     synthDriverHandler.synthIndexReached.register(on_index_reached)
