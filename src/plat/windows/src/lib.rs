@@ -7,9 +7,10 @@
 //!
 //! An engine may be used from any thread, but from one thread at a time.
 
-use engine::{Reading, Voice, speak_with, transcribe};
-use std::ffi::{CStr, c_char, c_int, c_void};
+use engine::{Gender, Reading, VOICES, Voice, VoiceDef, speak_with, transcribe};
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::OnceLock;
 
 /// Success.
 pub const KLATTARA_OK: c_int = 0;
@@ -26,6 +27,11 @@ pub const KLATTARA_READ_TEXT: c_int = 0;
 pub const KLATTARA_READ_SPELLED: c_int = 1;
 /// Read the input as bracketed ARPAbet, such as "[HH AH0 L OW1]".
 pub const KLATTARA_READ_PHONEMES: c_int = 2;
+
+/// The male model of the vocal tract.
+pub const KLATTARA_MALE: c_int = 0;
+/// The female model of the vocal tract.
+pub const KLATTARA_FEMALE: c_int = 1;
 
 /// Receives audio: `count` signed 16-bit mono samples. Returns 0 to go on,
 /// or anything else to stop speaking at once.
@@ -78,6 +84,82 @@ pub unsafe extern "C" fn klattara_destroy(engine: *mut KlattaraEngine) {
     }
 }
 
+/// The definition of voice `index`, counting from 0.
+fn voice_def(index: c_int) -> Option<&'static VoiceDef> {
+    VOICES.get(usize::try_from(index).ok()?)
+}
+
+/// How many voices there are.
+#[unsafe(no_mangle)]
+pub extern "C" fn klattara_voice_count() -> c_int {
+    VOICES.len() as c_int
+}
+
+/// The name of voice `index`, counting from 0, as a constant string, or null
+/// if there is no such voice.
+#[unsafe(no_mangle)]
+pub extern "C" fn klattara_voice_name(index: c_int) -> *const c_char {
+    static NAMES: OnceLock<Vec<CString>> = OnceLock::new();
+    guard(std::ptr::null(), || {
+        let names = NAMES.get_or_init(|| VOICES.iter().map(|v| CString::new(v.name).unwrap_or_default()).collect());
+        usize::try_from(index).ok().and_then(|i| names.get(i)).map_or(std::ptr::null(), |name| name.as_ptr())
+    })
+}
+
+/// The base pitch of voice `index` in Hz, or 0 if there is no such voice.
+#[unsafe(no_mangle)]
+pub extern "C" fn klattara_voice_pitch(index: c_int) -> f64 {
+    voice_def(index).map_or(0.0, |voice| voice.pitch)
+}
+
+/// The inflection of voice `index`, or -1 if there is no such voice.
+#[unsafe(no_mangle)]
+pub extern "C" fn klattara_voice_inflection(index: c_int) -> f64 {
+    voice_def(index).map_or(-1.0, |voice| voice.inflection)
+}
+
+/// The gender of voice `index`, KLATTARA_MALE or KLATTARA_FEMALE, or
+/// KLATTARA_INVALID if there is no such voice.
+#[unsafe(no_mangle)]
+pub extern "C" fn klattara_voice_gender(index: c_int) -> c_int {
+    voice_def(index).map_or(KLATTARA_INVALID, |voice| match voice.gender {
+        Gender::Male => KLATTARA_MALE,
+        Gender::Female => KLATTARA_FEMALE,
+    })
+}
+
+/// Changes to voice `index`, counting from 0: its gender, pitch, inflection and
+/// voice quality. Rate, volume and how text is read stay as they are.
+///
+/// # Safety
+/// `engine` must be null or a live engine from [`klattara_create`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn klattara_set_voice(engine: *mut KlattaraEngine, index: c_int) -> c_int {
+    // SAFETY: the caller passes null or a live engine.
+    let Some(engine) = (unsafe { engine.as_mut() }) else { return KLATTARA_INVALID };
+    let Some(def) = voice_def(index) else { return KLATTARA_INVALID };
+    engine.voice.take_on(def);
+    KLATTARA_OK
+}
+
+/// Sets which model of the vocal tract the current voice uses, KLATTARA_MALE or
+/// KLATTARA_FEMALE, for making a voice of your own. Nothing else changes, so
+/// set the pitch as well.
+///
+/// # Safety
+/// `engine` must be null or a live engine from [`klattara_create`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn klattara_set_gender(engine: *mut KlattaraEngine, gender: c_int) -> c_int {
+    // SAFETY: the caller passes null or a live engine.
+    let Some(engine) = (unsafe { engine.as_mut() }) else { return KLATTARA_INVALID };
+    engine.voice.gender = match gender {
+        KLATTARA_MALE => Gender::Male,
+        KLATTARA_FEMALE => Gender::Female,
+        _ => return KLATTARA_INVALID,
+    };
+    KLATTARA_OK
+}
+
 /// Applies `change` to the engine's voice if `value` is in `range`.
 ///
 /// # Safety
@@ -109,13 +191,14 @@ pub unsafe extern "C" fn klattara_set_rate(engine: *mut KlattaraEngine, rate: f6
     unsafe { set(engine, rate, 0.25..=8.0, |voice, value| voice.rate = value) }
 }
 
-/// Sets the base pitch in Hz, from 40 to 600. The default is 110.
+/// Sets the base pitch in Hz, from 40 to 550. Each voice has its own default,
+/// 110 for the first.
 ///
 /// # Safety
 /// `engine` must be null or a live engine from [`klattara_create`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn klattara_set_pitch(engine: *mut KlattaraEngine, hz: f64) -> c_int {
-    unsafe { set(engine, hz, 40.0..=600.0, |voice, value| voice.pitch = value) }
+    unsafe { set(engine, hz, 40.0..=550.0, |voice, value| voice.pitch = value) }
 }
 
 /// Sets how much the pitch moves: 0 is monotone, 1 normal, up to 2.5.
@@ -169,6 +252,13 @@ pub unsafe extern "C" fn klattara_set_phrase_prediction(engine: *mut KlattaraEng
 /// KLATTARA_READ_ constants. Returns KLATTARA_OK when finished,
 /// KLATTARA_STOPPED if the callback stopped it, or an error.
 ///
+/// In ordinary text, `[:phone klattara enable]` turns on phoneme input, and
+/// `[:phone klattara disable]` turns it off, on this engine until it is changed.
+/// While it is on, a bracket of valid ARPAbet is spoken as one word. A program
+/// that reads text it doesn't control should remove `[:` from it first.
+///
+/// Phonetic input can be sung: see the notes in klattara.h.
+///
 /// # Safety
 /// `engine` must be null or a live engine from [`klattara_create`], `input`
 /// null or a NUL-terminated string, and `callback` must be safe to call
@@ -182,7 +272,7 @@ pub unsafe extern "C" fn klattara_speak(
     user: *mut c_void,
 ) -> c_int {
     // SAFETY: the caller passes null or a live engine.
-    let Some(engine) = (unsafe { engine.as_ref() }) else { return KLATTARA_INVALID };
+    let Some(engine) = (unsafe { engine.as_mut() }) else { return KLATTARA_INVALID };
     let Some(callback) = callback else { return KLATTARA_INVALID };
     if input.is_null() {
         return KLATTARA_INVALID;
@@ -203,7 +293,7 @@ pub unsafe extern "C" fn klattara_speak(
             // SAFETY: the caller guarantees the callback is safe with `user`.
             unsafe { callback(user, samples.as_ptr(), samples.len() as c_int) == 0 }
         };
-        match speak_with(&input, reading, &engine.voice, engine.sample_rate, &mut on_audio) {
+        match speak_with(&input, reading, &mut engine.voice, engine.sample_rate, &mut on_audio) {
             Ok(true) => KLATTARA_OK,
             Ok(false) => KLATTARA_STOPPED,
             Err(_) => KLATTARA_INVALID,
@@ -322,6 +412,119 @@ mod tests {
         assert_eq!(unsafe { klattara_set_phrase_prediction(std::ptr::null_mut(), 1) }, KLATTARA_INVALID);
     }
 
+    /// The audio for a sentence, after `prepare` has set up the engine.
+    fn spoken(prepare: impl FnOnce(*mut KlattaraEngine)) -> Vec<i16> {
+        let engine = klattara_create(22050);
+        let mut audio: Vec<i16> = Vec::new();
+        let user = (&mut audio as *mut Vec<i16>).cast::<c_void>();
+        prepare(engine);
+        unsafe {
+            klattara_speak(engine, c"Hello, world.".as_ptr(), KLATTARA_READ_TEXT, Some(collect), user);
+            klattara_destroy(engine);
+        }
+        audio
+    }
+
+    #[test]
+    fn lists_the_voices() {
+        assert_eq!(klattara_voice_count(), 2);
+        let name = |index| unsafe { CStr::from_ptr(klattara_voice_name(index)) }.to_str().unwrap();
+        assert_eq!((name(0), name(1)), ("Steve", "Brittany"));
+        assert_eq!((klattara_voice_pitch(0), klattara_voice_pitch(1)), (110.0, 210.0));
+        assert_eq!((klattara_voice_inflection(0), klattara_voice_inflection(1)), (1.0, 1.0));
+        assert_eq!((klattara_voice_gender(0), klattara_voice_gender(1)), (KLATTARA_MALE, KLATTARA_FEMALE));
+        for bad in [-1, 2] {
+            assert!(klattara_voice_name(bad).is_null());
+            assert_eq!(klattara_voice_pitch(bad), 0.0);
+            assert_eq!(klattara_voice_inflection(bad), -1.0);
+            assert_eq!(klattara_voice_gender(bad), KLATTARA_INVALID);
+        }
+    }
+
+    #[test]
+    fn the_voice_can_change_and_change_back() {
+        let steve = spoken(|_| {});
+        let brittany = spoken(|engine| unsafe {
+            assert_eq!(klattara_set_voice(engine, 1), KLATTARA_OK);
+        });
+        assert_ne!(steve, brittany);
+        // The speaking rate is the same, whoever speaks.
+        assert_eq!(steve.len(), brittany.len());
+        let back = spoken(|engine| unsafe {
+            klattara_set_voice(engine, 1);
+            klattara_set_voice(engine, 0);
+        });
+        assert_eq!(steve, back);
+        // Choosing a voice brings back its own pitch and inflection.
+        let reset = spoken(|engine| unsafe {
+            klattara_set_pitch(engine, 300.0);
+            klattara_set_inflection(engine, 0.0);
+            klattara_set_voice(engine, 0);
+        });
+        assert_eq!(steve, reset);
+        unsafe {
+            let engine = klattara_create(22050);
+            assert_eq!(klattara_set_voice(engine, 2), KLATTARA_INVALID);
+            assert_eq!(klattara_set_voice(std::ptr::null_mut(), 0), KLATTARA_INVALID);
+            klattara_destroy(engine);
+        }
+    }
+
+    #[test]
+    fn a_change_of_voice_keeps_the_rate() {
+        let fast = spoken(|engine| unsafe {
+            klattara_set_rate(engine, 2.0);
+            klattara_set_voice(engine, 1);
+        });
+        let normal = spoken(|engine| unsafe {
+            klattara_set_voice(engine, 1);
+        });
+        assert!(fast.len() < normal.len() * 3 / 4, "{} {}", fast.len(), normal.len());
+    }
+
+    #[test]
+    fn the_gender_can_be_set_alone() {
+        let steve = spoken(|_| {});
+        let female = spoken(|engine| unsafe {
+            assert_eq!(klattara_set_gender(engine, KLATTARA_FEMALE), KLATTARA_OK);
+        });
+        assert_ne!(steve, female);
+        unsafe {
+            let engine = klattara_create(22050);
+            assert_eq!(klattara_set_gender(engine, 2), KLATTARA_INVALID);
+            assert_eq!(klattara_set_gender(std::ptr::null_mut(), KLATTARA_MALE), KLATTARA_INVALID);
+            klattara_destroy(engine);
+        }
+    }
+
+    #[test]
+    fn phoneme_input_lasts_on_the_engine_until_disabled() {
+        let word = c"[HH AH0 L OW1].";
+        let speak = |engine: *mut KlattaraEngine, input: &CStr, reading: c_int| {
+            let mut audio: Vec<i16> = Vec::new();
+            let user = (&mut audio as *mut Vec<i16>).cast::<c_void>();
+            assert_eq!(unsafe { klattara_speak(engine, input.as_ptr(), reading, Some(collect), user) }, KLATTARA_OK);
+            audio
+        };
+        let engine = klattara_create(22050);
+        let as_text = speak(engine, word, KLATTARA_READ_TEXT);
+        let as_word = speak(engine, word, KLATTARA_READ_PHONEMES);
+        assert_ne!(as_text, as_word);
+        assert!(speak(engine, c"[:phone klattara enable]", KLATTARA_READ_TEXT).is_empty());
+        assert_eq!(speak(engine, word, KLATTARA_READ_TEXT), as_word);
+        // It belongs to the engine: a change of voice leaves it on, another engine off.
+        unsafe { klattara_set_voice(engine, 0) };
+        assert_eq!(speak(engine, word, KLATTARA_READ_TEXT), as_word);
+        let other = klattara_create(22050);
+        assert_eq!(speak(other, word, KLATTARA_READ_TEXT), as_text);
+        assert!(speak(engine, c"[:phone Klattara disable]", KLATTARA_READ_TEXT).is_empty());
+        assert_eq!(speak(engine, word, KLATTARA_READ_TEXT), as_text);
+        unsafe {
+            klattara_destroy(engine);
+            klattara_destroy(other);
+        }
+    }
+
     #[test]
     fn rejects_bad_arguments() {
         assert!(klattara_create(100).is_null());
@@ -334,13 +537,13 @@ mod tests {
     }
 
     #[test]
-    fn pitch_goes_from_40_to_600_hz() {
+    fn pitch_goes_from_40_to_550_hz() {
         let engine = klattara_create(22050);
         unsafe {
             assert_eq!(klattara_set_pitch(engine, 40.0), KLATTARA_OK);
-            assert_eq!(klattara_set_pitch(engine, 600.0), KLATTARA_OK);
+            assert_eq!(klattara_set_pitch(engine, 550.0), KLATTARA_OK);
             assert_eq!(klattara_set_pitch(engine, 39.0), KLATTARA_INVALID);
-            assert_eq!(klattara_set_pitch(engine, 601.0), KLATTARA_INVALID);
+            assert_eq!(klattara_set_pitch(engine, 551.0), KLATTARA_INVALID);
             klattara_destroy(engine);
         }
     }

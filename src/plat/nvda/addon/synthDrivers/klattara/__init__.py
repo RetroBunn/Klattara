@@ -15,6 +15,7 @@ import ctypes
 import os
 import queue
 import threading
+from collections import OrderedDict
 
 import addonHandler
 import config
@@ -30,7 +31,7 @@ from speech.commands import (
 	RateCommand,
 	VolumeCommand,
 )
-from synthDriverHandler import synthDoneSpeaking, synthIndexReached
+from synthDriverHandler import VoiceInfo, synthDoneSpeaking, synthIndexReached
 
 addonHandler.initTranslation()
 
@@ -62,11 +63,15 @@ KLATTARA_AUDIO_CALLBACK = ctypes.CFUNCTYPE(
 # normal (about 190), 500 about 980.
 MIN_RATE, NORMAL_RATE, MAX_RATE = 29, 100, 500
 # Pitch: the base pitch in Hz; what the engine accepts.
-MIN_PITCH, NORMAL_PITCH, MAX_PITCH = 40, 110, 600
+MIN_PITCH, NORMAL_PITCH, MAX_PITCH = 40, 110, 550
 # Inflection: percent of normal pitch movement, like DECtalk's pitch range.
 MIN_INFLECTION, NORMAL_INFLECTION, MAX_INFLECTION = 0, 100, 250
 # Volume: percent of full volume.
 MIN_VOLUME, MAX_VOLUME = 0, 100
+# What opens a Klattara command in text, such as [:phone klattara enable].
+COMMAND_START = "[:"
+# Every voice speaks American English.
+VOICE_LANGUAGE = "en_US"
 
 
 def load_library(path):
@@ -91,6 +96,16 @@ def load_library(path):
 		ctypes.c_void_p,
 	]
 	lib.klattara_speak.restype = ctypes.c_int
+	lib.klattara_voice_count.argtypes = []
+	lib.klattara_voice_count.restype = ctypes.c_int
+	lib.klattara_voice_name.argtypes = [ctypes.c_int]
+	lib.klattara_voice_name.restype = ctypes.c_char_p
+	lib.klattara_voice_pitch.argtypes = [ctypes.c_int]
+	lib.klattara_voice_pitch.restype = ctypes.c_double
+	lib.klattara_voice_inflection.argtypes = [ctypes.c_int]
+	lib.klattara_voice_inflection.restype = ctypes.c_double
+	lib.klattara_set_voice.argtypes = [ctypes.c_void_p, ctypes.c_int]
+	lib.klattara_set_voice.restype = ctypes.c_int
 	return lib
 
 
@@ -126,6 +141,7 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 		defaultVal=False,
 	)
 	supportedSettings = (
+		synthDriverHandler.SynthDriver.VoiceSetting(),
 		_rateSetting,
 		_pitchSetting,
 		_inflectionSetting,
@@ -153,6 +169,14 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 		self._engine = self._lib.klattara_create(SAMPLE_RATE)
 		if not self._engine:
 			raise RuntimeError("Klattara could not create an engine")
+		# The voices are defined in the engine, the default first. Each is known
+		# to NVDA by its name in lower case.
+		self._voiceNames = [
+			self._lib.klattara_voice_name(index).decode("utf-8")
+			for index in range(self._lib.klattara_voice_count())
+		]
+		self._voiceIds = [name.lower() for name in self._voiceNames]
+		self._voice = self._voiceIds[0]
 		self._rate = self._rateSetting.defaultVal
 		self._pitch = self._pitchSetting.defaultVal
 		self._inflection = self._inflectionSetting.defaultVal
@@ -182,6 +206,32 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 		self._lib.klattara_destroy(self._engine)
 		self._engine = None
 		super().terminate()
+
+	def _getAvailableVoices(self):
+		return OrderedDict(
+			(voiceId, VoiceInfo(voiceId, name, VOICE_LANGUAGE))
+			for voiceId, name in zip(self._voiceIds, self._voiceNames)
+		)
+
+	def _get_voice(self):
+		return self._voice
+
+	def _set_voice(self, value):
+		# NVDA catches this when a saved voice no longer exists, and moves on to
+		# the current one.
+		if value not in self._voiceIds:
+			raise ValueError(f"Unknown voice: {value}")
+		self._voice = value
+		# Pitch and inflection are stored with the voice, so choosing one sets both
+		# sliders, as DECtalk's driver for NVDA does. NVDA updates the sliders after a
+		# change of voice, and on loading it sets the voice first, then the saved values.
+		voice = self._voiceIds.index(value)
+		self._pitch = self._paramToPercent(self._lib.klattara_voice_pitch(voice), MIN_PITCH, MAX_PITCH)
+		self._inflection = self._paramToPercent(
+			self._lib.klattara_voice_inflection(voice) * 100,
+			MIN_INFLECTION,
+			MAX_INFLECTION,
+		)
 
 	# Settings are percentages, as NVDA keeps them. The speech thread reads
 	# them before each piece of text, so only that thread touches the engine.
@@ -231,7 +281,14 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 		text = []
 
 		def flush():
-			joined = "".join(text).strip()
+			joined = "".join(text)
+			# A screen reader reads whatever is on the screen, so a command in that text
+			# must not reach the engine. Without its opening, the rest is just words,
+			# which you still hear. Spelled text is read character by character, and
+			# has no commands.
+			if not spelled:
+				joined = joined.replace(COMMAND_START, " ")
+			joined = joined.strip()
 			if joined:
 				self._queue.put((generation, "text", (joined, spelled, dict(prosody))))
 			text.clear()
@@ -307,10 +364,20 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 			except Exception:
 				log.error("Klattara speech thread", exc_info=True)
 
+	def _pitchAt(self, voice, percent):
+		"""The Hz of a pitch slider position. The slider's steps are 5.1 Hz, so the
+		position nearest the voice's own pitch gives exactly that pitch."""
+		own = self._lib.klattara_voice_pitch(voice)
+		if percent == self._paramToPercent(own, MIN_PITCH, MAX_PITCH):
+			return own
+		return self._percentToParam(percent, MIN_PITCH, MAX_PITCH)
+
 	def _say(self, generation, text, spelled, prosody):
 		lib, engine = self._lib, self._engine
+		voice = self._voiceIds.index(self._voice)
+		lib.klattara_set_voice(engine, voice)
 		rate = self._percentToParam(prosody.get("rate", self._rate), MIN_RATE, MAX_RATE)
-		pitch = self._percentToParam(prosody.get("pitch", self._pitch), MIN_PITCH, MAX_PITCH)
+		pitch = self._pitchAt(voice, prosody.get("pitch", self._pitch))
 		inflection = self._percentToParam(self._inflection, MIN_INFLECTION, MAX_INFLECTION)
 		volume = self._percentToParam(prosody.get("volume", self._volume), MIN_VOLUME, MAX_VOLUME)
 		# A prosody command can go past the slider's range; keep within the

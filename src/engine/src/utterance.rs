@@ -11,6 +11,7 @@
 
 use crate::phoneme::{Manner, Phoneme, Stress};
 use crate::phonetics::spec;
+use crate::singing::{self, Written};
 use std::fmt;
 
 /// What ends a phrase.
@@ -45,6 +46,9 @@ pub struct Word {
     /// of "turned", rather than part of the word itself as in "bronze" or
     /// "bend". Endings do not lengthen the vowel (Klatt's rule 9).
     pub ending: bool,
+    /// The length and pitch written after each sound, or empty if there are none.
+    /// A word that is only a [`Phoneme::Pause`] is a rest.
+    pub written: Vec<Written>,
 }
 
 impl Word {
@@ -55,7 +59,23 @@ impl Word {
             phonemes.as_slice(),
             [.., (before, _), (Phoneme::Z, _)] if matches!(before.manner(), Manner::Nasal | Manner::Liquid)
         );
-        Word { phonemes, ending }
+        Word { phonemes, ending, written: Vec::new() }
+    }
+
+    /// A word whose sounds may have lengths and pitches written after them.
+    fn with_written(phonemes: Vec<(Phoneme, Stress)>, written: Vec<Written>) -> Word {
+        let any = written.iter().any(|w| *w != Written::default());
+        Word { written: if any { written } else { Vec::new() }, ..Word::from_sounds(phonemes) }
+    }
+
+    /// A rest of this many milliseconds.
+    fn rest(duration: u32) -> Word {
+        let written = vec![Written { duration: Some(duration), pitch: None }];
+        Word { phonemes: vec![(Phoneme::Pause, Stress::Unstressed)], ending: false, written }
+    }
+
+    fn is_rest(&self) -> bool {
+        matches!(self.phonemes[..], [(Phoneme::Pause, _)])
     }
 }
 
@@ -98,16 +118,28 @@ pub fn parse(input: &str) -> Result<Vec<Phrase>, ParseError> {
                         }
                     }
                 }
-                let phonemes = body
-                    .split_whitespace()
-                    .map(|symbol| {
-                        Phoneme::parse(symbol).ok_or_else(|| ParseError(format!("unknown phoneme \"{symbol}\"")))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                if phonemes.is_empty() {
+                let sounds = singing::split_sounds(&body);
+                if sounds.is_empty() {
                     return Err(ParseError(format!("empty word at character {}", at + 1)));
                 }
-                words.push(Word::from_sounds(phonemes));
+                let (mut phonemes, mut written) = (Vec::new(), Vec::new());
+                for sound in sounds {
+                    let unknown = || ParseError(format!("unknown phoneme \"{sound}\""));
+                    let (symbol, marks) = singing::split_written(sound).ok_or_else(unknown)?;
+                    if symbol == singing::REST {
+                        let duration = marks.duration.ok_or_else(unknown)?;
+                        if !phonemes.is_empty() {
+                            words.push(Word::with_written(std::mem::take(&mut phonemes), std::mem::take(&mut written)));
+                        }
+                        words.push(Word::rest(duration));
+                    } else {
+                        phonemes.push(Phoneme::parse(symbol).ok_or_else(unknown)?);
+                        written.push(marks);
+                    }
+                }
+                if !phonemes.is_empty() {
+                    words.push(Word::with_written(phonemes, written));
+                }
                 continue;
             }
             '|' => Boundary::Minor,
@@ -150,11 +182,16 @@ pub fn notation(phrases: &[Phrase]) -> String {
             let symbols: Vec<String> = word
                 .phonemes
                 .iter()
-                .map(|&(p, s)| match (p.is_vowel(), s) {
-                    (false, _) => format!("{p:?}"),
-                    (true, Stress::Unstressed) => format!("{p:?}0"),
-                    (true, Stress::Primary) => format!("{p:?}1"),
-                    (true, Stress::Secondary) => format!("{p:?}2"),
+                .enumerate()
+                .map(|(i, &(p, s))| {
+                    let symbol = match (p, p.is_vowel(), s) {
+                        (Phoneme::Pause, _, _) => singing::REST.to_string(),
+                        (_, false, _) => format!("{p:?}"),
+                        (_, true, Stress::Unstressed) => format!("{p:?}0"),
+                        (_, true, Stress::Primary) => format!("{p:?}1"),
+                        (_, true, Stress::Secondary) => format!("{p:?}2"),
+                    };
+                    symbol + &singing::write(word.written.get(i).copied().unwrap_or_default())
                 })
                 .collect();
             out.push_str(&format!("[{}]", symbols.join(" ")));
@@ -212,6 +249,10 @@ pub struct Segment {
     pub released: bool,
     /// For /t/: made with a glottal closure, so the voice before it creaks.
     pub glottalized: bool,
+    /// The length and pitch written after this sound.
+    pub written: Written,
+    /// In a stretch of speech with a written pitch, which is sung.
+    pub singing: bool,
     /// For released stops: time from release to the start of the next
     /// segment's own sound (burst plus any aspiration), ms.
     pub vot: f64,
@@ -241,6 +282,8 @@ impl Segment {
             emphasized: false,
             phrase,
             boundary,
+            written: Written::default(),
+            singing: false,
             released: false,
             glottalized: false,
             vot: 0.0,
@@ -334,7 +377,12 @@ pub fn segments(phrases: &[Phrase]) -> Vec<Segment> {
     let mut out = vec![Segment::pause(None, 0)];
     for (phrase_index, phrase) in phrases.iter().enumerate() {
         for (word_index, word) in phrase.words.iter().enumerate() {
-            let spoken = schwa_before_r(&word.phonemes);
+            if word.is_rest() {
+                out.push(Segment { written: word.written[0], ..Segment::pause(None, phrase_index) });
+                continue;
+            }
+            // Sounds with lengths and pitches written after them stay as written.
+            let spoken = if word.written.is_empty() { schwa_before_r(&word.phonemes) } else { word.phonemes.clone() };
             let phonemes: Vec<Phoneme> = spoken.iter().map(|&(p, _)| p).collect();
             let (places, syllables) = syllabify(&phonemes);
             let last_word = word_index == phrase.words.len() - 1;
@@ -368,6 +416,7 @@ pub fn segments(phrases: &[Phrase]) -> Vec<Segment> {
                     in_phrase_final_syllable: last_word && final_syllable,
                     in_clause_final_syllable: last_word && final_syllable && phrase.boundary.has_pause(),
                     accented: phoneme.is_vowel() && stress == Stress::Primary,
+                    written: word.written.get(i).copied().unwrap_or_default(),
                     ..Segment::pause(None, phrase_index)
                 });
             }
@@ -382,7 +431,29 @@ pub fn segments(phrases: &[Phrase]) -> Vec<Segment> {
     }
     apply_allophone_rules(&mut out);
     mark_exclamations(&mut out);
+    mark_singing(&mut out);
     out
+}
+
+/// Marks each stretch of speech with a written pitch as sung, all of it.
+fn mark_singing(segments: &mut [Segment]) {
+    let mut i = 0;
+    while i < segments.len() {
+        if segments[i].phoneme == Phoneme::Pause {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < segments.len()
+            && segments[i].phoneme != Phoneme::Pause
+            && segments[i].phrase == segments[start].phrase
+        {
+            i += 1;
+        }
+        if segments[start..i].iter().any(|s| s.written.pitch.is_some()) {
+            segments[start..i].iter_mut().for_each(|s| s.singing = true);
+        }
+    }
 }
 
 /// Marks the segments of each stretch of speech that ends in an
@@ -558,6 +629,62 @@ mod tests {
 
     fn phonemes_of(input: &str) -> Vec<Phoneme> {
         segments(&parse(input).unwrap()).iter().map(|s| s.phoneme).filter(|&p| p != Pause).collect()
+    }
+
+    #[test]
+    fn sounds_can_have_lengths_and_pitches_written_after_them() {
+        let phrases = parse("[D AA1<400,20> T<,41>].").unwrap();
+        let word = &phrases[0].words[0];
+        assert_eq!(word.phonemes.len(), 3);
+        assert_eq!(word.written[0], Written::default());
+        assert_eq!(word.written[1], Written { duration: Some(400), pitch: Some(20) });
+        assert_eq!(word.written[2], Written { duration: None, pitch: Some(41) });
+        // Without any, a word is as it always was.
+        assert!(parse("[D AA1 T].").unwrap()[0].words[0].written.is_empty());
+        assert_eq!(parse("[D AA1<0,0> T].").unwrap()[0].words[0], parse("[D AA1 T].").unwrap()[0].words[0]);
+    }
+
+    #[test]
+    fn a_rest_divides_a_word_and_needs_a_length() {
+        let phrases = parse("[AA1<400,20> _<300> AA1<400,22>].").unwrap();
+        assert_eq!(phrases[0].words.len(), 3);
+        assert!(phrases[0].words[1].is_rest());
+        assert!(parse("[_].").is_err() && parse("[_<,20>].").is_err());
+        let timed = segments(&phrases);
+        assert_eq!(timed.iter().filter(|s| s.phoneme == Phoneme::Pause && s.written.duration == Some(300)).count(), 1);
+    }
+
+    #[test]
+    fn bad_lengths_and_pitches_are_errors() {
+        for bad in ["[AA1<400,551>].", "[AA1<400>", "[AA1<x>].", "[AA1<400,20].", "[QQ<400,20>]."] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn written_lengths_and_pitches_read_back_the_same() {
+        let text = "[D AA1<400,20> T] [_<300>] [AA1<500,220>], [AA1<,20>].";
+        assert_eq!(notation(&parse(text).unwrap()), text);
+    }
+
+    #[test]
+    fn a_written_pitch_makes_its_whole_stretch_sung() {
+        let sung = segments(&parse("[D AA1<400,20>] [T IY1], [S IY1].").unwrap());
+        let comma = sung.iter().position(|s| s.boundary == Some(Boundary::Comma)).unwrap();
+        assert!(sung[1..comma].iter().all(|s| s.singing));
+        assert!(sung[comma + 1..].iter().all(|s| !s.singing));
+        // A length alone is not singing.
+        assert!(segments(&parse("[AA1<400>].").unwrap()).iter().all(|s| !s.singing));
+    }
+
+    #[test]
+    fn sung_sounds_keep_their_place_through_the_rules() {
+        // "er" before a stressed vowel would become two sounds; sung, it stays one.
+        let sung = segments(&parse("[ER0<300,20> AY1<300,22>].").unwrap());
+        let sounds: Vec<Phoneme> = sung.iter().filter(|s| s.phoneme != Phoneme::Pause).map(|s| s.phoneme).collect();
+        assert_eq!(sounds, [Phoneme::ER, Phoneme::AY]);
+        assert_eq!(sung[1].written.duration, Some(300));
+        assert_eq!(sung[2].written.pitch, Some(22));
     }
 
     #[test]

@@ -1,14 +1,15 @@
 //! Speaks text, or bracketed ARPAbet input, to a WAV file.
 //!
-//! Usage: cargo run --release --example say -- [--as-written] [--phrase-prediction] "Hello, world." [output.wav] [rate]
+//! Usage: cargo run --release --example say -- [--voice=Brittany] [--as-written] [--phrase-prediction] "Hello, world." [output.wav] [rate]
 //!        cargo run --release --example say -- "[HH AH0 L OW1] [W ER1 L D]." [output.wav] [rate]
 //!
 //! For text, the pronunciation used is printed first. Rate 1.0 is about 180
 //! words per minute; 2.0 is twice as fast. With --as-written, abbreviations
 //! are read as written instead of in full. With --phrase-prediction, long
-//! stretches without punctuation are broken into phrases.
+//! stretches without punctuation are broken into phrases. With --voice, one of
+//! the voices in voicedefs.rs speaks instead of the default.
 
-use klattara::{Voice, speak_phonemes, speak_text, transcribe_with, wav};
+use klattara::{Voice, find_voice, speak_phonemes, speak_text, transcribe_with, wav};
 
 const SAMPLE_RATE: u32 = 22050;
 
@@ -17,18 +18,27 @@ fn main() {
     let flag = |name: &str| flags.iter().any(|f| f == name);
     let mut args = args.into_iter();
     let Some(input) = args.next() else {
-        eprintln!("usage: say [--as-written] [--phrase-prediction] \"Hello, world.\" [output.wav] [rate]");
+        eprintln!(
+            "usage: say [--voice=Brittany] [--as-written] [--phrase-prediction] \"Hello, world.\" [output.wav] [rate]"
+        );
         std::process::exit(2);
     };
     let output = args.next().unwrap_or_else(|| "samples/say.wav".to_string());
     let rate = args.next().map_or(1.0, |r| r.parse().expect("rate must be a number"));
+    let chosen = flags.iter().find_map(|f| f.strip_prefix("--voice=")).map_or(Voice::default(), |name| {
+        Voice::from(find_voice(name).unwrap_or_else(|| {
+            eprintln!("error: there is no voice named {name}");
+            std::process::exit(2);
+        }))
+    });
     let voice = Voice {
         rate,
         expand_abbreviations: !flag("--as-written"),
         phrase_prediction: flag("--phrase-prediction"),
-        ..Voice::default()
+        ..chosen
     };
-    let audio = if input.trim_start().starts_with('[') {
+    // A bracket at the start means phonemes, unless it opens a command.
+    let audio = if input.trim_start().starts_with('[') && !input.trim_start().starts_with("[:") {
         speak_phonemes(&input, &voice, SAMPLE_RATE).unwrap_or_else(|error| {
             eprintln!("error: {error}");
             std::process::exit(1);

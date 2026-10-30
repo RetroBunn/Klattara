@@ -34,7 +34,9 @@ fn pause_ms(boundary: Option<Boundary>) -> f64 {
 /// [`crate::speech`].
 pub fn assign_durations(segments: &mut [Segment], pause_scale: f64) {
     for i in 0..segments.len() {
-        segments[i].duration = if segments[i].phoneme == Phoneme::Pause {
+        segments[i].duration = if let Some(written) = segments[i].written.duration {
+            f64::from(written)
+        } else if segments[i].phoneme == Phoneme::Pause {
             pause_ms(segments[i].boundary) * pause_scale
         } else {
             let (compressible, minimum) = rule_duration(segments, i);

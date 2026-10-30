@@ -13,6 +13,7 @@
 
 mod abbreviations;
 mod arpabet;
+mod commands;
 mod frame;
 mod homographs;
 mod intonation;
@@ -22,6 +23,7 @@ mod numbers;
 mod phoneme;
 mod phonetics;
 mod resonator;
+mod singing;
 mod source;
 mod speech;
 mod synth;
@@ -31,6 +33,7 @@ mod text;
 mod timing;
 mod tracks;
 mod utterance;
+mod voicedefs;
 pub mod wav;
 
 pub use frame::{Frame, NUM_FORMANTS};
@@ -42,3 +45,4 @@ pub use speech::{
 };
 pub use synth::{Synth, VoiceSettings};
 pub use utterance::ParseError;
+pub use voicedefs::{Gender, VOICES, VoiceDef, find_voice};

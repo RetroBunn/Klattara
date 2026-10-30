@@ -11,6 +11,7 @@
 //! movement evenly.
 
 use crate::phoneme::Phoneme;
+use crate::singing::{NOTE_GLIDE_MS, is_note, pitch_hz};
 use crate::utterance::{Boundary, Segment};
 
 /// Pitch-shape settings, in semitones above or below the base pitch.
@@ -48,6 +49,8 @@ fn final_target(boundary: Boundary) -> f64 {
 pub fn pitch_keyframes(segments: &[Segment], base_hz: f64, inflection: f64) -> Vec<(f64, f64)> {
     let to_hz = |semitones: f64| base_hz * 2f64.powf(semitones * inflection / 12.0);
     let mut keyframes = Vec::new();
+    // The last pitch sung, which the next note moves from, across a rest too.
+    let mut sung = None;
     let mut i = 0;
     while i < segments.len() {
         if segments[i].phoneme == Phoneme::Pause {
@@ -61,6 +64,11 @@ pub fn pitch_keyframes(segments: &[Segment], base_hz: f64, inflection: f64) -> V
         {
             i += 1;
         }
+        if segments[start].singing {
+            keyframes.extend(sung_contour(&segments[start..i], &mut sung));
+            continue;
+        }
+        sung = None;
         // A phrase that ends without a pause ends at a break (`|`).
         let boundary = match segments.get(i) {
             Some(next) if next.phoneme != Phoneme::Pause => Boundary::Minor,
@@ -71,6 +79,32 @@ pub fn pitch_keyframes(segments: &[Segment], base_hz: f64, inflection: f64) -> V
         }
     }
     keyframes
+}
+
+/// The contour of a sung stretch, in Hz: only its written pitches. A sound with no
+/// pitch of its own holds the one before it, or at the start the first to come.
+fn sung_contour(stretch: &[Segment], sung: &mut Option<f64>) -> Vec<(f64, f64)> {
+    let first = stretch.iter().find_map(|s| s.written.pitch).map_or(0.0, pitch_hz);
+    let mut hz = sung.unwrap_or(first);
+    let mut points = vec![(stretch[0].start, hz)];
+    for seg in stretch {
+        let Some(pitch) = seg.written.pitch else { continue };
+        let glide = if is_note(pitch) { NOTE_GLIDE_MS.min(seg.duration) } else { seg.duration };
+        points.push((seg.start, hz));
+        hz = pitch_hz(pitch);
+        points.push((seg.start + glide, hz));
+    }
+    points.push((stretch[stretch.len() - 1].end(), hz));
+    *sung = Some(hz);
+    let mut last = f64::NEG_INFINITY;
+    points.retain(|&(t, _)| {
+        let keep = t > last;
+        if keep {
+            last = t;
+        }
+        keep
+    });
+    points
 }
 
 /// The contour of one intonational phrase, in semitones.
@@ -122,6 +156,70 @@ mod tests {
     use super::*;
     use crate::timing::assign_durations;
     use crate::utterance::{parse, segments};
+
+    /// The pitch keyframes of phonetic input, and its segments.
+    fn sung(input: &str) -> (Vec<Segment>, Vec<(f64, f64)>) {
+        let mut segs = segments(&parse(input).unwrap());
+        assign_durations(&mut segs, 1.0);
+        let keyframes = pitch_keyframes(&segs, 110.0, 1.0);
+        (segs, keyframes)
+    }
+
+    /// F0 at time `t`, between keyframes.
+    fn f0_at(keyframes: &[(f64, f64)], t: f64) -> f64 {
+        let i = keyframes.partition_point(|k| k.0 <= t);
+        if i == 0 || i == keyframes.len() {
+            return keyframes[i.saturating_sub(1)].1;
+        }
+        let ((t0, a), (t1, b)) = (keyframes[i - 1], keyframes[i]);
+        a + (b - a) * (t - t0) / (t1 - t0)
+    }
+
+    #[test]
+    fn a_note_holds_flat_with_no_accent_or_falling_end() {
+        let (segs, keys) = sung("[AA1<1000,34>].");
+        let vowel = &segs[1];
+        assert_eq!(vowel.duration, 1000.0);
+        for share in [0.0, 0.25, 0.5, 0.99, 1.0] {
+            assert_eq!(f0_at(&keys, vowel.start + share * vowel.duration), 440.0);
+        }
+    }
+
+    #[test]
+    fn notes_take_100_ms_to_arrive_and_hz_take_their_whole_sound() {
+        let (segs, keys) = sung("[AA1<500,13> AA1<500,25> AA1<500,300>].");
+        let (second, third) = (&segs[2], &segs[3]);
+        assert_eq!(f0_at(&keys, second.start), 130.81);
+        assert!((f0_at(&keys, second.start + 50.0) - (130.81 + 261.63) / 2.0).abs() < 0.01);
+        assert_eq!(f0_at(&keys, second.start + 100.0), 261.63);
+        assert_eq!(f0_at(&keys, second.start + 400.0), 261.63);
+        assert_eq!(f0_at(&keys, third.start), 261.63);
+        assert!((f0_at(&keys, third.start + 250.0) - (261.63 + 300.0) / 2.0).abs() < 0.01);
+        assert_eq!(f0_at(&keys, third.end()), 300.0);
+    }
+
+    #[test]
+    fn a_sound_with_no_pitch_holds_the_one_nearby() {
+        // The D before the first note takes that note; the T after holds it.
+        let (segs, keys) = sung("[D AA1<500,25> T].");
+        assert_eq!(f0_at(&keys, segs[1].start), 261.63);
+        assert_eq!(f0_at(&keys, segs[3].end()), 261.63);
+    }
+
+    #[test]
+    fn the_next_note_moves_from_the_last_across_a_rest() {
+        let (segs, keys) = sung("[AA1<500,13> _<200> AA1<500,25>].");
+        let after = &segs[3];
+        assert_eq!(f0_at(&keys, after.start), 130.81);
+        assert_eq!(f0_at(&keys, after.start + 100.0), 261.63);
+    }
+
+    #[test]
+    fn notes_do_not_depend_on_the_voices_pitch() {
+        let mut segs = segments(&parse("[AA1<500,25>].").unwrap());
+        assign_durations(&mut segs, 1.0);
+        assert_eq!(pitch_keyframes(&segs, 110.0, 1.0), pitch_keyframes(&segs, 210.0, 0.0));
+    }
 
     fn contour(input: &str) -> Vec<(f64, f64)> {
         let mut segs = segments(&parse(input).unwrap());

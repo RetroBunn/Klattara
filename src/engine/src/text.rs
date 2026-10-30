@@ -1072,7 +1072,7 @@ fn finish(written: &[Written], past_sentence: bool, mentioned: &mut HashSet<Stri
             }
         }
         if !phonemes.is_empty() {
-            words.push(Word { ending: has_ending(&word.text, &phonemes), phonemes });
+            words.push(Word { written: Vec::new(), ending: has_ending(&word.text, &phonemes), phonemes });
         }
     }
     // A phrase needs an accent: give the last repeated word its own back.
@@ -1117,7 +1117,7 @@ pub fn spelled_phrases(text: &str) -> Vec<Phrase> {
         } else {
             continue;
         };
-        words.push(Word { phonemes, ending: false });
+        words.push(Word { phonemes, ending: false, written: Vec::new() });
     }
     let mut phrases = Vec::new();
     close_phrase(&mut phrases, &mut words, Boundary::Period);
@@ -1716,7 +1716,7 @@ mod tests {
     fn handles_suffixes_on_known_words() {
         // Possessives and inflections of dictionary words.
         let klatt = notation(&[Phrase {
-            words: vec![Word { phonemes: with_suffix("dogs").unwrap(), ending: false }],
+            words: vec![Word { written: Vec::new(), phonemes: with_suffix("dogs").unwrap(), ending: false }],
             boundary: Boundary::Period,
         }]);
         assert!(klatt.ends_with("G Z]."), "{klatt}");
@@ -1778,8 +1778,10 @@ mod tests {
     #[test]
     fn compounds_only_where_the_model_is_unsure() {
         let compound_sounds = |word: &str, shortest: usize, related: usize| {
-            let phrase =
-                |phonemes| Phrase { words: vec![Word { phonemes, ending: false }], boundary: Boundary::Period };
+            let phrase = |phonemes| Phrase {
+                words: vec![Word { phonemes, ending: false, written: Vec::new() }],
+                boundary: Boundary::Period,
+            };
             compound(word, shortest, related).map(|phonemes| notation(&[phrase(phonemes)]))
         };
         // The parts of a real compound, with the main stress on the first.

@@ -23,6 +23,10 @@ pub struct Frame {
     /// Creaky voice, 0 (normal) to 1: lower, irregular pitch with uneven
     /// pulses, as before a glottalized /t/.
     pub creak: f64,
+    /// Vibrato: how far the pitch swings either way, in cents. 0 is none.
+    pub vibrato: f64,
+    /// 1 holds the pitch free of flutter, as a sung note is; 0 is ordinary speech.
+    pub steady: f64,
     /// Amplitude of aspiration noise (breath, as in /h/), dB. Excites the
     /// cascade branch, so it takes on the formants of the current vowel.
     pub ah: f64,
@@ -60,6 +64,8 @@ impl Default for Frame {
             oq: 0.5,
             tl: 0.0,
             creak: 0.0,
+            vibrato: 0.0,
+            steady: 0.0,
             ah: 0.0,
             af: 0.0,
             freq: [500.0, 1500.0, 2500.0, 3300.0, 3750.0, 4900.0],
@@ -96,6 +102,8 @@ impl Frame {
             oq: mix(self.oq, other.oq),
             tl: mix(self.tl, other.tl),
             creak: mix(self.creak, other.creak),
+            vibrato: mix(self.vibrato, other.vibrato),
+            steady: mix(self.steady, other.steady),
             ah: mix(self.ah, other.ah),
             af: mix(self.af, other.af),
             freq: mix_all(&self.freq, &other.freq),

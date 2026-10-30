@@ -41,6 +41,9 @@ extern "C" {
 #define KLATTARA_READ_SPELLED 1   /* Character by character. */
 #define KLATTARA_READ_PHONEMES 2  /* Bracketed ARPAbet, such as "[HH AH0 L OW1]". */
 
+#define KLATTARA_MALE 0           /* The male model of the vocal tract. */
+#define KLATTARA_FEMALE 1         /* The female model of the vocal tract. */
+
 typedef struct KlattaraEngine KlattaraEngine;
 
 typedef int (KLATTARA_CALL *KlattaraAudioCallback)(void *user, const int16_t *samples, int count);
@@ -55,10 +58,29 @@ KlattaraEngine *KLATTARA_CALL klattara_create(int sample_rate);
 /* Frees an engine. NULL is ignored. */
 void KLATTARA_CALL klattara_destroy(KlattaraEngine *engine);
 
+/* The voices are numbered from 0; the first is the default. These give how
+ * many there are, and each one's name as a constant string (NULL if there is no
+ * such voice), base pitch in Hz (0 if none), inflection (-1 if none) and gender
+ * (KLATTARA_INVALID if none). */
+int KLATTARA_CALL klattara_voice_count(void);
+const char *KLATTARA_CALL klattara_voice_name(int index);
+double KLATTARA_CALL klattara_voice_pitch(int index);
+double KLATTARA_CALL klattara_voice_inflection(int index);
+int KLATTARA_CALL klattara_voice_gender(int index);
+
+/* Changes to a voice: its gender, pitch, inflection and voice quality. Rate,
+ * volume and how text is read stay as they are. */
+int KLATTARA_CALL klattara_set_voice(KlattaraEngine *engine, int index);
+
+/* Which model of the vocal tract the current voice uses, KLATTARA_MALE or
+ * KLATTARA_FEMALE, for making a voice of your own. Nothing else changes, so set
+ * the pitch as well. */
+int KLATTARA_CALL klattara_set_gender(KlattaraEngine *engine, int gender);
+
 /* Speaking rate: 1.0 is about 200 words per minute, 2.0 twice as fast (0.25 to 8). */
 int KLATTARA_CALL klattara_set_rate(KlattaraEngine *engine, double rate);
 
-/* Base pitch in Hz (40 to 600; default 110). */
+/* Base pitch in Hz (40 to 550; each voice has its own default, 110 for the first). */
 int KLATTARA_CALL klattara_set_pitch(KlattaraEngine *engine, double hz);
 
 /* Pitch movement: 0 is monotone, 1 normal, up to 2.5. */
@@ -78,7 +100,19 @@ int KLATTARA_CALL klattara_set_phrase_prediction(KlattaraEngine *engine, int pre
 
 /* Speaks UTF-8 input, passing audio to callback in chunks as it is made.
  * reading is one of the KLATTARA_READ_ constants. Returns KLATTARA_OK,
- * KLATTARA_STOPPED, or an error. */
+ * KLATTARA_STOPPED, or an error.
+ *
+ * In ordinary text, [:phone klattara enable] turns on phoneme input, and
+ * [:phone klattara disable] turns it off, on this engine until it is changed.
+ * While it is on, a bracket of valid ARPAbet is spoken as one word:
+ * "Say [HH AH0 L OW1] now." A program that reads text it doesn't control should
+ * remove "[:" from it first.
+ *
+ * Phonetic input can be sung. After any sound, <milliseconds,pitch> gives it a
+ * length and a pitch: [D AA1<400,20>]. A pitch of 1 to 39 is a note, 1 to 37 being
+ * C2 to C5 by semitones and 38 and 39 also C5, sung with vibrato. A pitch of 40 to
+ * 550 is in Hz, with no vibrato. <milliseconds> or <,pitch> gives only one of them,
+ * and _<milliseconds> is a rest. Written lengths don't change with the rate. */
 int KLATTARA_CALL klattara_speak(KlattaraEngine *engine, const char *input, int reading,
                                  KlattaraAudioCallback callback, void *user);
 

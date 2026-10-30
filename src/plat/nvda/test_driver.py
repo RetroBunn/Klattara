@@ -77,6 +77,16 @@ class Log:
     info = warning = io = debug
 
 
+class SettingsRing:
+    """Stands in for synthSettingsRing.SynthSettingsRing."""
+
+    def __init__(self, synth):
+        pass
+
+    def updateSupportedSettings(self, synth):
+        pass
+
+
 class WavePlayer:
     """Stands in for nvwave.WavePlayer, with the same signature."""
 
@@ -126,7 +136,7 @@ def load_nvda():
         post_configProfileSwitch=extensionPoints.Action(),
     )
     module("globalVars", settingsRing=None)
-    module("synthSettingsRing", SynthSettingsRing=object)
+    module("synthSettingsRing", SynthSettingsRing=SettingsRing)
     module("languageHandler", getLanguageDescription=lambda language: language)
     module("speechDictHandler", loadVoiceDict=lambda synth: None)
     module("synthDrivers", __path__=[])
@@ -163,6 +173,12 @@ def check_stand_ins_match_nvda():
     check({"idle", "stop", "pause", "close"} <= methods.keys(), "NVDA's player has the other methods the driver calls")
     config_spec = (NVDA_SOURCE / "config" / "configSpec.py").read_text(encoding="utf-8")
     check("[audio]\n\toutputDevice" in config_spec, "NVDA keeps the output device in its audio settings")
+    # The pitch slider moves with the voice only if NVDA looks at the settings again
+    # after a change of voice, in the dialog and in the settings ring.
+    dialogs = (NVDA_SOURCE / "gui" / "settingsDialogs.py").read_text(encoding="utf-8")
+    check("self.container.updateDriverSettings(changedSetting=self.setting.id)" in dialogs, "NVDA's dialog updates its sliders after a change of voice")
+    ring = (NVDA_SOURCE / "synthSettingsRing.py").read_text(encoding="utf-8")
+    check("self.synth.saveSettings()" in ring, "NVDA's settings ring saves the settings after a change of voice")
 
 
 def wait_for(kind, timeout=10.0):
@@ -217,12 +233,12 @@ def main():
     # The sliders spread evenly; NVDA is given the defaults where normal lands.
     specs = {s.id: s.configSpec for s in SynthDriver.supportedSettings}
     check(specs["rate"] == "integer(default=15,min=0,max=100)", f"rate defaults to 15: {specs['rate']}")
-    check(specs["pitch"] == "integer(default=12,min=0,max=100)", f"pitch defaults to 12: {specs['pitch']}")
+    check(specs["pitch"] == "integer(default=14,min=0,max=100)", f"pitch defaults to 14: {specs['pitch']}")
     check(specs["inflection"] == "integer(default=40,min=0,max=100)", f"inflection defaults to 40: {specs['inflection']}")
     to_param = SynthDriver._percentToParam
     check(abs(to_param(15, driver.MIN_RATE, driver.MAX_RATE) - 100) <= 2, "rate 15 is normal speed")
     check((to_param(0, driver.MIN_RATE, driver.MAX_RATE), to_param(100, driver.MIN_RATE, driver.MAX_RATE)) == (29, 500), "rate spans about 50 to 980 words per minute")
-    check((to_param(0, driver.MIN_PITCH, driver.MAX_PITCH), to_param(100, driver.MIN_PITCH, driver.MAX_PITCH)) == (40, 600), "pitch spans 40 to 600 Hz")
+    check((to_param(0, driver.MIN_PITCH, driver.MAX_PITCH), to_param(100, driver.MIN_PITCH, driver.MAX_PITCH)) == (40, 550), "pitch spans 40 to 550 Hz")
     check(to_param(40, driver.MIN_INFLECTION, driver.MAX_INFLECTION) == 100, "inflection 40 is normal, 100 is 250%")
     check(
         specs["expandAbbreviations"] == "boolean(default=True)",
@@ -233,12 +249,15 @@ def main():
         f"phrase prediction is off by default: {specs['phrasePrediction']}",
     )
 
+    check(specs["voice"] == "string(default=None)", f"the voice is a setting NVDA keeps: {specs['voice']}")
+
     synth = SynthDriver()
     # What NVDA does on loading a synth for the first time: save the defaults.
     config.conf["speech"][synth.name] = {}
     synth.saveSettings()
     synthDriverHandler._curSynth = synth
     check(config.conf["speech"]["klattara"]["rate"] == 15, "the default settings are saved to NVDA's configuration")
+    check(config.conf["speech"]["klattara"]["voice"] == "steve", "Steve is the default voice")
     try:
         # Speech with index marks, in order, then done.
         events.clear()
@@ -290,11 +309,109 @@ def main():
             synth,
             [commands.CharacterModeCommand(True), commands.PitchCommand(offset=30), "A", commands.PitchCommand(), "b"],
         )
-        check(pitches == [275, 107], f"the capital is higher and the pitch returns: {pitches} Hz")
+        check(pitches == [264, 110], f"the capital is higher and the pitch returns: {pitches} Hz")
         pitches.clear()
         speak_and_measure(synth, [commands.PitchCommand(offset=200), "A"])
-        check(pitches == [600], f"a pitch beyond the slider is limited to the engine's 600 Hz: {pitches}")
+        check(pitches == [550], f"a pitch beyond the slider is limited to the engine's 550 Hz: {pitches}")
         synth._lib.klattara_set_pitch = set_pitch
+
+        # The voices, in the engine's order, with their names and language.
+        voices = synth.availableVoices
+        check(list(voices) == ["steve", "brittany"], f"the voices are listed: {list(voices)}")
+        check([v.displayName for v in voices.values()] == ["Steve", "Brittany"], "the voices have their names")
+        check(synth.language == "en_US", f"the voices speak American English: {synth.language}")
+
+        # Each voice's pitch and inflection are stored with it, and choosing a voice
+        # sets both sliders.
+        synth._lib.klattara_set_pitch = lambda engine, hz: pitches.append(hz) or set_pitch(engine, hz)
+        chosen = []
+        set_voice = synth._lib.klattara_set_voice
+        synth._lib.klattara_set_voice = lambda engine, voice: chosen.append(voice) or set_voice(engine, voice)
+        pitches.clear()
+        steve = speak_and_measure(synth, ["Hello, world.  "])
+        check(pitches == [110] and chosen == [0], f"Steve speaks at his own 110 Hz: {pitches}")
+        pitches.clear()
+        chosen.clear()
+        # As NVDA's settings ring does. Capital pitch change counts from the saved pitch.
+        synthDriverHandler.changeVoice(synth, "brittany")
+        synth.saveSettings()
+        check(synth.pitch == 33, f"changing to Brittany moves the slider to her pitch: {synth.pitch}")
+        brittany = speak_and_measure(synth, ["Hello, world.  "])
+        check(pitches == [210] and chosen == [1], f"Brittany speaks at her own 210 Hz: {pitches}")
+        check(steve == brittany, f"both voices speak at the same rate ({steve} and {brittany} bytes)")
+        pitches.clear()
+        speak_and_measure(
+            synth,
+            [commands.CharacterModeCommand(True), commands.PitchCommand(offset=30), "A", commands.PitchCommand(), "b"],
+        )
+        check(pitches == [361, 210], f"Brittany's capital is higher, and the pitch returns: {pitches} Hz")
+        pitches.clear()
+        synth.pitch = 100
+        speak_and_measure(synth, ["Hello.  "])
+        check(pitches == [550], f"the slider's highest gives Brittany the engine's 550 Hz: {pitches}")
+        synth.pitch = 0
+        pitches.clear()
+        speak_and_measure(synth, ["Hello.  "])
+        check(pitches == [40], f"the slider's lowest gives Brittany 40 Hz: {pitches}")
+        synth.pitch = 34
+        pitches.clear()
+        speak_and_measure(synth, ["Hello.  "])
+        check(pitches == [213], f"a step up from her own pitch is 213 Hz: {pitches}")
+        synth.pitch = 33
+        pitches.clear()
+        speak_and_measure(synth, ["Hello.  "])
+        check(pitches == [210], f"and back on her own position it is 210 Hz again: {pitches}")
+
+        # A change the user makes lasts until another voice is chosen. That voice's
+        # own pitch and inflection then take over, wherever the sliders were.
+        synth.pitch = 60
+        synth.inflection = 80
+        synth.voice = "steve"
+        check((synth.pitch, synth.inflection) == (14, 40), f"Steve's own values come back: {synth.pitch}, {synth.inflection}")
+        synth.pitch = 90
+        synth.inflection = 10
+        synth.voice = "brittany"
+        check((synth.pitch, synth.inflection) == (33, 40), f"so do Brittany's: {synth.pitch}, {synth.inflection}")
+        synth.pitch = 50
+        synth.voice = "brittany"
+        check(synth.pitch == 33, f"also on choosing the voice already in use: {synth.pitch}")
+
+        # NVDA saves the voice and the sliders, and takes them back on loading: the
+        # voice first, then the saved values, which have the last word. It gets over a
+        # saved voice that no longer exists, and settings saved before there were voices.
+        synth.voice = "brittany"
+        synth.pitch = 35
+        synth.inflection = 60
+        synth.saveSettings()
+        check(config.conf["speech"]["klattara"]["voice"] == "brittany", "the voice is saved to NVDA's configuration")
+        check(config.conf["speech"]["klattara"]["pitch"] == 35, "the pitch is saved with it")
+        synth.voice = "steve"
+        synth.loadSettings()
+        restored = (synth.voice, synth.pitch, synth.inflection)
+        check(restored == ("brittany", 35, 60), f"they come back on loading: {restored}")
+        synth.voice = "steve"
+        synth.loadSettings(onlyChanged=True)
+        restored = (synth.voice, synth.pitch, synth.inflection)
+        check(restored == ("brittany", 35, 60), f"also on a change of profile: {restored}")
+        synth.pitch = 33
+        synth.saveSettings()
+        synth.voice = "steve"
+        synth.loadSettings()
+        pitches.clear()
+        speak_and_measure(synth, ["Hello.  "])
+        check(pitches == [210], f"her own pitch, saved, is exact again on loading: {pitches}")
+        config.conf["speech"]["klattara"]["voice"] = "nobody"
+        synth.loadSettings()
+        check(synth.voice == "brittany", "a saved voice that no longer exists leaves the voice as it is")
+        check(config.conf["speech"]["klattara"]["voice"] == "brittany", "and the configuration is corrected")
+        synth.voice = "steve"
+        del config.conf["speech"]["klattara"]["voice"]
+        config.conf["speech"]["klattara"]["pitch"] = 14
+        config.conf["speech"]["klattara"]["inflection"] = 40
+        synth.loadSettings()
+        check((synth.voice, synth.pitch) == ("steve", 14), "settings saved before there were voices load as Steve")
+        synth._lib.klattara_set_pitch = set_pitch
+        synth._lib.klattara_set_voice = set_voice
 
         # With the check box off, abbreviations are read as written: "Inc."
         # as "ink" is shorter than "incorporated".
@@ -314,6 +431,40 @@ def main():
         synth.phrasePrediction = False
         check(phrased > whole + 1000, f"checked, a long sentence is broken into phrases ({phrased} > {whole} bytes)")
         check(config.conf["speech"]["klattara"]["phrasePrediction"] is False, "phrase prediction is saved to NVDA's configuration")
+
+        # A Klattara command in the text never reaches the engine, wherever it falls,
+        # so phoneme input stays off and a page can't change how speech is read.
+        sent = []
+        real_speak = synth._lib.klattara_speak
+        def recording_speak(engine, text, reading, callback, user):
+            sent.append((text, reading))
+            return real_speak(engine, text, reading, callback, user)
+        synth._lib.klattara_speak = recording_speak
+        word = "[HH AH0 L OW1].  "
+        as_text = speak_and_measure(synth, [word])
+        for sequence in (
+            ["[:phone klattara enable]  "],
+            ["[:PHONE KLATTARA ENABLE]  "],
+            ["Before [:phone klattara enable] after.  "],
+            ["[:phone klattara ", "enable]  "],
+            ["[", ":phone klattara enable]  "],
+            ["[:phone klattara ", commands.IndexCommand(9), "enable]  "],
+            ["[", commands.IndexCommand(9), ":phone klattara enable]  "],
+        ):
+            speak_and_measure(synth, sequence)
+            check(speak_and_measure(synth, [word]) == as_text, f"phoneme input stays off after {sequence!r}")
+        check(not any(b"[:" in text for text, _ in sent), f"no command was sent to the engine: {sent}")
+        sent.clear()
+        speak_and_measure(synth, ["Before [:phone klattara enable] after.  "])
+        check(sent[0][0] == b"Before  phone klattara enable] after.", f"the words of a command are still read: {sent[0][0]!r}")
+        sent.clear()
+        speak_and_measure(synth, ["[:  "])
+        check(not sent, "nothing is sent when only a command's opening was there")
+        # Spelled text keeps its characters: the engine doesn't take commands there.
+        speak_and_measure(synth, [commands.CharacterModeCommand(True), "[:", commands.CharacterModeCommand(False)])
+        check(sent == [(b"[:", driver.KLATTARA_READ_SPELLED)], f"spelled text keeps its characters: {sent}")
+        check(speak_and_measure(synth, [word]) == as_text, "and phoneme input stays off after them")
+        synth._lib.klattara_speak = real_speak
 
         # Commands the driver does not support are skipped quietly.
         speak_and_measure(synth, [commands.LangChangeCommand("en_US"), "Hello.  "])

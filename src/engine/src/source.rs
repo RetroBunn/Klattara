@@ -1,5 +1,6 @@
 //! Excitation sources: the glottal pulse, its spectral tilt, and noise.
 
+use crate::singing::VIBRATO_RATE;
 use std::f64::consts::PI;
 
 /// Flutter is a share of F0 in KLSYN88, so it grows with pitch: at 400 Hz it
@@ -41,6 +42,10 @@ pub struct GlottalSource {
     flutter: f64,
     /// Creaky voice, 0 to 1.
     creak: f64,
+    /// How far vibrato swings the pitch either way, in cents.
+    vibrato: f64,
+    /// 1 holds the pitch free of flutter.
+    steady: f64,
     /// Whether a glottal period is in progress.
     running: bool,
     /// Position within the current period, 0 to 1. Opening is at 0.
@@ -66,6 +71,8 @@ impl GlottalSource {
             oq: 0.5,
             flutter: 0.0,
             creak: 0.0,
+            vibrato: 0.0,
+            steady: 0.0,
             running: false,
             phase: 0.0,
             phase_step: 0.0,
@@ -92,6 +99,13 @@ impl GlottalSource {
     /// Sets how creaky the voice is, from 0 (normal) to 1, for the next period.
     pub fn set_creak(&mut self, creak: f64) {
         self.creak = creak.clamp(0.0, 1.0);
+    }
+
+    /// Sets the vibrato, in cents either way, and how far flutter is held off, from
+    /// 0 to 1, for the next period.
+    pub fn set_singing(&mut self, vibrato: f64, steady: f64) {
+        self.vibrato = vibrato;
+        self.steady = steady;
     }
 
     /// Whether the folds are vibrating and currently closed.
@@ -159,7 +173,11 @@ impl GlottalSource {
         let t = self.samples_elapsed as f64 / self.sample_rate;
         let wobble = (2.0 * PI * 12.7 * t).sin() + (2.0 * PI * 7.1 * t).sin() + (2.0 * PI * 4.7 * t).sin();
         let size = (FLUTTER_CEILING_HZ / self.f0).min(1.0);
-        let mut f0 = self.f0 * (1.0 + self.flutter / 5000.0 * size * wobble);
+        let flutter = self.flutter * (1.0 - self.steady);
+        let mut f0 = self.f0 * (1.0 + flutter / 5000.0 * size * wobble);
+        if self.vibrato > 0.0 {
+            f0 *= 2f64.powf(self.vibrato * (2.0 * PI * VIBRATO_RATE * t).cos() / 1200.0);
+        }
         let c = self.creak;
         self.period_gain = 1.0;
         if c > 0.0 {
@@ -309,6 +327,43 @@ mod tests {
         let (low, ceiling, high) = (flutter_swing(100.0), flutter_swing(150.0), flutter_swing(400.0));
         assert!(low > 0.5 && low < ceiling, "{low} {ceiling}");
         assert!((high - ceiling).abs() < 0.05, "{high} {ceiling}");
+    }
+
+    /// The pitch of each period over two seconds, Hz.
+    fn period_pitches(f0: f64, vibrato: f64, steady: f64) -> Vec<f64> {
+        let mut source = GlottalSource::new(SR);
+        source.set_targets(f0, 0.5);
+        source.set_flutter(25.0);
+        source.set_singing(vibrato, steady);
+        (0..2 * SR as usize)
+            .filter_map(|_| {
+                source.next_sample();
+                (source.phase < source.phase_step).then_some(source.phase_step * SR)
+            })
+            .collect()
+    }
+
+    /// The lowest and highest of a list.
+    fn range(pitches: &[f64]) -> (f64, f64) {
+        pitches.iter().fold((f64::MAX, f64::MIN), |(low, high), x| (low.min(*x), high.max(*x)))
+    }
+
+    #[test]
+    fn steady_holds_the_pitch_and_speech_has_flutter() {
+        let (low, high) = range(&period_pitches(110.0, 0.0, 1.0));
+        assert!(high - low < 1e-9, "{low} {high}");
+        let (low, high) = range(&period_pitches(110.0, 0.0, 0.0));
+        assert!(high - low > 0.5, "{low} {high}");
+    }
+
+    #[test]
+    fn vibrato_is_the_same_interval_on_every_note() {
+        for f0 in [65.41, 130.81, 261.63, 523.25] {
+            let (low, high) = range(&period_pitches(f0, 25.0, 1.0));
+            // Up and down from the note by 25 cents, whatever the note.
+            let (down, up) = (1200.0 * (f0 / low).log2(), 1200.0 * (high / f0).log2());
+            assert!((down - 25.0).abs() < 0.5 && (up - 25.0).abs() < 0.5, "{f0}: {down} {up}");
+        }
     }
 
     #[test]

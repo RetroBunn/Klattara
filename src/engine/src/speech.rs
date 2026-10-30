@@ -1,5 +1,6 @@
 //! Speech from text or phonetic input: the pipeline to audio.
 
+use crate::commands;
 use crate::frame::Frame;
 use crate::intonation::pitch_keyframes;
 use crate::phoneme::Phoneme;
@@ -8,10 +9,13 @@ use crate::text;
 use crate::timing::assign_durations;
 use crate::tracks;
 use crate::utterance::{Boundary, ParseError, Phrase, Segment, notation, parse, segments};
+use crate::voicedefs::{Gender, VOICES, VoiceDef};
 
 /// The adjustable character of a voice.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Voice {
+    /// Which model of the vocal tract the voice uses.
+    pub gender: Gender,
     /// Base pitch, Hz.
     pub pitch: f64,
     /// Scales all pitch movement: 0 is monotone, 1 normal, 2.5 the most, as
@@ -24,8 +28,13 @@ pub struct Voice {
     pub open_quotient: f64,
     /// Spectral tilt of the voice source, dB at 3 kHz: higher sounds softer.
     pub tilt: f64,
+    /// Breath noise heard through voicing, as in [`VoiceDef::breathiness`].
+    pub breathiness: f64,
     /// Slow pitch wobble, as in [`VoiceSettings::flutter`].
     pub flutter: f64,
+    /// Output gain that brings the voice to the level of the others, as in
+    /// [`VoiceDef::level`]. The volume adds to this.
+    pub level: f64,
     pub volume: f64,
     /// Whether abbreviations in text are read in full ("Dr." as "doctor",
     /// "Calif." as "California"), or as written ("D R").
@@ -35,26 +44,54 @@ pub struct Voice {
     /// Eloquence's phrase prediction. Off by default, as screen readers
     /// usually have it.
     pub phrase_prediction: bool,
+    /// Whether a bracket of valid ARPAbet in text is spoken as a word. Off by
+    /// default, and set by commands in the text: see [`crate::commands`].
+    pub phoneme_input: bool,
 }
 
 impl Default for Voice {
-    /// The default voice: an adult male pitch, with the medium open
-    /// quotient, between the DECtalk-like buzz and a soft, breathy voice, and
-    /// no extra spectral tilt. With a tilt of 6 dB the voice had 3 to 5 dB
-    /// less energy from 1 to 4 kHz than Eloquence or DECtalk, and sounded
-    /// breathy at fast rates; the user chose this brighter tone by ear.
+    /// The first voice in [`VOICES`], with everything else at normal.
     fn default() -> Self {
+        let first = &VOICES[0];
         Voice {
-            pitch: 110.0,
-            inflection: 1.0,
+            gender: first.gender,
+            pitch: first.pitch,
+            inflection: first.inflection,
             rate: 1.0,
-            open_quotient: 0.55,
-            tilt: 0.0,
-            flutter: 25.0,
+            open_quotient: first.open_quotient,
+            tilt: first.tilt,
+            breathiness: first.breathiness,
+            flutter: first.flutter,
+            level: first.level,
             volume: 1.0,
             expand_abbreviations: true,
             phrase_prediction: false,
+            phoneme_input: false,
         }
+    }
+}
+
+impl From<&VoiceDef> for Voice {
+    /// The voice as it is defined, with everything else at normal.
+    fn from(def: &VoiceDef) -> Self {
+        let mut voice = Voice::default();
+        voice.take_on(def);
+        voice
+    }
+}
+
+impl Voice {
+    /// Becomes the voice `def`: its gender, pitch, inflection and quality. Rate,
+    /// volume and how text is read stay as they are.
+    pub fn take_on(&mut self, def: &VoiceDef) {
+        self.gender = def.gender;
+        self.pitch = def.pitch;
+        self.inflection = def.inflection;
+        self.open_quotient = def.open_quotient;
+        self.tilt = def.tilt;
+        self.breathiness = def.breathiness;
+        self.flutter = def.flutter;
+        self.level = def.level;
     }
 }
 
@@ -82,6 +119,10 @@ fn timeline(phrases: &[Phrase], rate: f64) -> (Vec<Segment>, f64) {
     assign_durations(&mut segments, pause_scale);
     let (mut speech, mut pauses) = (0.0, 0.0);
     for seg in &segments {
+        // Written lengths stay as written, so they play no part in the compression.
+        if seg.written.duration.is_some() {
+            continue;
+        }
         if seg.phoneme == Phoneme::Pause { pauses += seg.duration } else { speech += seg.duration }
     }
     let length = (speech + pauses / pause_scale / rate.sqrt()) / rate;
@@ -93,7 +134,7 @@ fn timeline(phrases: &[Phrase], rate: f64) -> (Vec<Segment>, f64) {
 /// the pitch from sounding mechanical, follows inflection up to normal: with
 /// inflection 0 the voice is a true monotone.
 fn synth_settings(voice: &Voice) -> VoiceSettings {
-    VoiceSettings { flutter: voice.flutter * voice.inflection.clamp(0.0, 1.0), volume: voice.volume }
+    VoiceSettings { flutter: voice.flutter * voice.inflection.clamp(0.0, 1.0), volume: voice.volume * voice.level }
 }
 
 /// Text longer than this many bytes is read piece by piece.
@@ -164,8 +205,24 @@ fn batches(phrases: Vec<Phrase>) -> Vec<Vec<Phrase>> {
 fn plan(phrases: &[Phrase], voice: &Voice) -> Vec<(f64, Frame)> {
     let (segments, compression) = timeline(phrases, voice.rate.clamp(0.25, 8.0));
     let pitch = pitch_keyframes(&segments, voice.pitch, voice.inflection);
-    let frames = tracks::frames(&segments, &pitch, voice.open_quotient, voice.tilt);
-    frames.into_iter().map(|(t, frame)| (t / compression, frame)).collect()
+    let frames = tracks::frames(&segments, &pitch, voice);
+    if segments.iter().all(|s| s.written.duration.is_none()) {
+        return frames.into_iter().map(|(t, frame)| (t / compression, frame)).collect();
+    }
+    // A sound with a written length takes exactly that long, and the rest is
+    // compressed around it.
+    let scale = |seg: &Segment| if seg.written.duration.is_some() { 1.0 } else { compression };
+    let (mut at, mut real_start) = (0, 0.0);
+    frames
+        .into_iter()
+        .map(|(t, frame)| {
+            while at + 1 < segments.len() && t >= segments[at].end() {
+                real_start += segments[at].duration / scale(&segments[at]);
+                at += 1;
+            }
+            (real_start + (t - segments[at].start) / scale(&segments[at]), frame)
+        })
+        .collect()
 }
 
 fn render(frames: &[(f64, Frame)], voice: &Voice, sample_rate: u32) -> Vec<f32> {
@@ -185,9 +242,10 @@ pub fn speak_phonemes(input: &str, voice: &Voice, sample_rate: u32) -> Result<Ve
     Ok(render(&phoneme_frames(input, voice)?, voice, sample_rate))
 }
 
-/// Plans ordinary text: synthesizer frames with their times in ms.
+/// Plans ordinary text: synthesizer frames with their times in ms. A command in
+/// the text applies to the rest of it, and not beyond.
 pub fn text_frames(input: &str, voice: &Voice) -> Vec<(f64, Frame)> {
-    plan(&text::phrases_with(input, voice.expand_abbreviations, voice.phrase_prediction), voice)
+    plan(&commands::phrases(input, &mut voice.clone()), voice)
 }
 
 /// Speaks ordinary text, returning samples between −1 and 1.
@@ -208,11 +266,12 @@ pub enum Reading {
 
 /// Speaks input, handing audio (samples between −1 and 1) to `on_audio`
 /// in chunks as it is made. Returns `Ok(false)` if `on_audio` asked to stop
-/// by returning false, and an error only for invalid phonetic input.
+/// by returning false, and an error only for invalid phonetic input. A command
+/// in text changes `voice`, so it lasts until another changes it back.
 pub fn speak_with(
     input: &str,
     reading: Reading,
-    voice: &Voice,
+    voice: &mut Voice,
     sample_rate: u32,
     on_audio: &mut dyn FnMut(&[f32]) -> bool,
 ) -> Result<bool, ParseError> {
@@ -222,11 +281,12 @@ pub fn speak_with(
     let parts = if reading == Reading::Phonemes { vec![input] } else { pieces(input) };
     for part in parts {
         let phrases = match reading {
-            Reading::Text => text::phrases_with(part, voice.expand_abbreviations, voice.phrase_prediction),
+            Reading::Text => commands::phrases(part, voice),
             Reading::Spelled => text::spelled_phrases(part),
             Reading::Phonemes => parse(part)?,
         };
-        for batch in batches(phrases) {
+        // Text with no words in it, such as a command alone, makes no sound.
+        for batch in batches(phrases).into_iter().filter(|batch| !batch.is_empty()) {
             if !tracks::render_with(&mut synth, &plan(&batch, voice), on_audio) {
                 return Ok(false);
             }
@@ -245,12 +305,93 @@ pub fn transcribe(input: &str) -> String {
 /// abbreviations are read in full and whether long stretches are broken
 /// into phrases, shown as `|`.
 pub fn transcribe_with(input: &str, voice: &Voice) -> String {
-    notation(&text::phrases_with(input, voice.expand_abbreviations, voice.phrase_prediction))
+    notation(&commands::phrases(input, &mut voice.clone()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The samples of `input`, read as text, by `voice`.
+    fn samples(input: &str, voice: &mut Voice) -> Vec<f32> {
+        let mut audio = Vec::new();
+        let done = speak_with(input, Reading::Text, voice, 22050, &mut |chunk| {
+            audio.extend_from_slice(chunk);
+            true
+        });
+        assert_eq!(done, Ok(true));
+        audio
+    }
+
+    /// How long the sung part of `input` lasts at `rate`, ms.
+    fn sung_length(input: &str, rate: f64) -> f64 {
+        let frames = text_frames(input, &Voice { rate, ..Voice::default() });
+        let sung: Vec<f64> = frames.iter().filter(|(_, f)| f.steady == 1.0).map(|(t, _)| *t).collect();
+        sung[sung.len() - 1] - sung[0]
+    }
+
+    #[test]
+    fn written_lengths_stay_exact_at_any_rate() {
+        let on = "[:phone klattara enable]";
+        for rate in [0.5, 1.0, 2.24, 5.0] {
+            let note = sung_length(&format!("{on}[AA1<800,20>]."), rate);
+            assert!((note - 800.0).abs() < 0.001, "rate {rate}: {note}");
+            let rest = sung_length(&format!("{on}[AA1<400,20> _<400> AA1<400,20>]."), rate);
+            assert!((rest - 1200.0).abs() < 0.001, "rate {rate}: {rest}");
+        }
+    }
+
+    #[test]
+    fn speech_around_a_song_still_follows_the_rate() {
+        let input = "[:phone klattara enable]Now listen to this. [AA1<800,20>].";
+        let total = |rate: f64| text_frames(input, &Voice { rate, ..Voice::default() }).last().unwrap().0;
+        assert!((sung_length(input, 1.0) - sung_length(input, 3.0)).abs() < 0.001);
+        // The speech shrinks, and the note doesn't, so the whole shrinks by less than 3.
+        assert!(total(3.0) < total(1.0) * 0.7, "{} {}", total(3.0), total(1.0));
+        assert!(total(3.0) > total(1.0) / 3.0, "{} {}", total(3.0), total(1.0));
+    }
+
+    #[test]
+    fn at_the_normal_rate_singing_follows_the_written_times_exactly() {
+        let frames = phoneme_frames("[AA1<500,13> AA1<500,25>].", &Voice::default()).unwrap();
+        let f0_at = |t: f64| frames.iter().rev().find(|f| f.0 <= t).unwrap().1.f0;
+        let begin = frames.iter().find(|(_, f)| f.steady == 1.0).unwrap().0;
+        assert_eq!(f0_at(begin + 499.0), 130.81);
+        assert_eq!(f0_at(begin + 600.0), 261.63);
+    }
+
+    #[test]
+    fn phoneme_input_lasts_between_calls_until_disabled() {
+        let word = "[HH AH0 L OW1].";
+        let mut voice = Voice::default();
+        let as_text = samples(word, &mut voice);
+        let as_word = speak_phonemes(word, &Voice::default(), 22050).unwrap();
+        assert_ne!(as_text, as_word);
+        // The command alone says nothing, and the next call reads phonemes.
+        assert!(samples("[:phone klattara enable]", &mut voice).is_empty());
+        assert_eq!(samples(word, &mut voice), as_word);
+        assert_eq!(samples(word, &mut voice), as_word);
+        assert!(samples("[:phone Klattara disable]", &mut voice).is_empty());
+        assert_eq!(samples(word, &mut voice), as_text);
+    }
+
+    #[test]
+    fn a_command_in_a_single_utterance_goes_no_further() {
+        let voice = Voice::default();
+        let text = "[:phone klattara enable] [HH AH0 L OW1].";
+        assert_eq!(transcribe_with(text, &voice), "[HH AH0 L OW1].");
+        assert_eq!(speak_text(text, &voice, 22050), speak_phonemes("[HH AH0 L OW1].", &voice, 22050).unwrap());
+        assert!(!voice.phoneme_input);
+    }
+
+    #[test]
+    fn spelled_and_phonetic_readings_have_no_commands() {
+        let mut voice = Voice::default();
+        speak_with("[:phone klattara enable]", Reading::Spelled, &mut voice, 22050, &mut |_| true).unwrap();
+        assert!(!voice.phoneme_input);
+        assert!(speak_with("[:phone klattara enable]", Reading::Phonemes, &mut voice, 22050, &mut |_| true).is_err());
+        assert!(!voice.phoneme_input);
+    }
 
     #[test]
     fn monotone_has_no_flutter() {
@@ -285,7 +426,7 @@ mod tests {
         // Pronouncing one word this long used to take minutes.
         let text = "TWFuIGlzIGRpc3Rpbmd1aXNoZWQ".repeat(10000);
         let mut chunks = 0;
-        let done = speak_with(&text, Reading::Text, &Voice::default(), 22050, &mut |_| {
+        let done = speak_with(&text, Reading::Text, &mut Voice::default(), 22050, &mut |_| {
             chunks += 1;
             false
         });
@@ -298,9 +439,9 @@ mod tests {
         let phrases = text::phrases_with(text, true, false);
         assert_eq!(batches(phrases.clone()), [phrases]);
         // Streaming makes exactly the audio of rendering it whole.
-        let voice = Voice::default();
+        let mut voice = Voice::default();
         let mut streamed = Vec::new();
-        let done = speak_with(text, Reading::Text, &voice, 22050, &mut |chunk| {
+        let done = speak_with(text, Reading::Text, &mut voice, 22050, &mut |chunk| {
             streamed.extend_from_slice(chunk);
             true
         });
@@ -335,14 +476,14 @@ mod tests {
     #[test]
     fn long_input_starts_at_once_and_can_stop() {
         let (mut chunks, text) = (0, "word ".repeat(5000));
-        let done = speak_with(&text, Reading::Text, &Voice::default(), 22050, &mut |_| {
+        let done = speak_with(&text, Reading::Text, &mut Voice::default(), 22050, &mut |_| {
             chunks += 1;
             false
         });
         assert_eq!((done, chunks), (Ok(false), 1));
         // Left to run, it says every batch.
         let mut samples = 0;
-        let done = speak_with(&"word ".repeat(1200), Reading::Text, &Voice::default(), 22050, &mut |chunk| {
+        let done = speak_with(&"word ".repeat(1200), Reading::Text, &mut Voice::default(), 22050, &mut |chunk| {
             samples += chunk.len();
             true
         });

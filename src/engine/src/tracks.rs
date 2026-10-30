@@ -17,8 +17,11 @@
 use crate::frame::Frame;
 use crate::phoneme::{Manner, Phoneme, Stress};
 use crate::phonetics::{CODA_R, FRONT_VELAR, NASALIZED_ZERO, OR_NUCLEUS, SILENT, Sound, spec};
+use crate::singing::{VIBRATO_CENTS, is_note};
+use crate::speech::Voice;
 use crate::synth::Synth;
 use crate::utterance::{Segment, syllabic_consonant};
+use crate::voicedefs::Gender;
 
 /// How long before the release a voiced stop's voicing resumes when it
 /// follows a voiceless sound, ms.
@@ -125,26 +128,41 @@ impl<T: Interpolate> Track<T> {
     }
 }
 
-/// The start and end formant targets of segment `i`.
-fn targets(segments: &[Segment], i: usize) -> (Formants, Formants) {
+/// The start and end formant targets of segment `i`, for a voice of `gender`.
+fn targets(segments: &[Segment], i: usize, gender: Gender) -> (Formants, Formants) {
+    let seg = &segments[i];
+    if seg.phoneme == Phoneme::HH {
+        // /h/ is breath through the vocal tract shape of its neighbour,
+        // usually the vowel that follows.
+        if segments.get(i + 1).is_some_and(|n| n.phoneme.is_sonorant()) {
+            let (start, _) = targets(segments, i + 1, gender);
+            return (start, start);
+        }
+        if i > 0 && segments[i - 1].phoneme.is_sonorant() {
+            let (_, end) = targets(segments, i - 1, gender);
+            return (end, end);
+        }
+    }
+    let (start, end) = table_targets(segments, i);
+    let (start_shares, end_shares) = gender.formant_shares(seg.phoneme);
+    let scaled = |f: Formants, shares: [f64; 3]| Formants { freq: std::array::from_fn(|k| f.freq[k] * shares[k]), ..f };
+    // A sound held steady in this context stays steady, between its two shares.
+    if start == end {
+        let middle = std::array::from_fn(|k| (start_shares[k] + end_shares[k]) / 2.0);
+        return (scaled(start, middle), scaled(end, middle));
+    }
+    (scaled(start, start_shares), scaled(end, end_shares))
+}
+
+/// The start and end formant targets of segment `i` in the phoneme tables,
+/// which describe a man's vocal tract.
+fn table_targets(segments: &[Segment], i: usize) -> (Formants, Formants) {
     let seg = &segments[i];
     // The schwa of a syllabic L or N takes the consonant's own shape.
     if let Some(consonant) = syllabic_consonant(segments, i) {
         let spec = spec(consonant);
         let held = Formants { freq: spec.formants, bw: spec.bandwidths };
         return (held, held);
-    }
-    if seg.phoneme == Phoneme::HH {
-        // /h/ is breath through the vocal tract shape of its neighbour,
-        // usually the vowel that follows.
-        if segments.get(i + 1).is_some_and(|n| n.phoneme.is_sonorant()) {
-            let (start, _) = targets(segments, i + 1);
-            return (start, start);
-        }
-        if i > 0 && segments[i - 1].phoneme.is_sonorant() {
-            let (_, end) = targets(segments, i - 1);
-            return (end, end);
-        }
     }
     let spec = spec(seg.phoneme);
     // Before R in the same word, /o/ holds steady instead of gliding: "four"
@@ -217,7 +235,7 @@ struct Join {
 }
 
 /// The join between segment `i` and the next, unless a pause separates them.
-fn join(segments: &[Segment], i: usize) -> Option<Join> {
+fn join(segments: &[Segment], i: usize, gender: Gender) -> Option<Join> {
     let (left, right) = (segments.get(i)?, segments.get(i + 1)?);
     if left.phoneme == Phoneme::Pause || right.phoneme == Phoneme::Pause {
         return None;
@@ -232,7 +250,7 @@ fn join(segments: &[Segment], i: usize) -> Option<Join> {
     }
     a.coarticulation = a.coarticulation.map(|k| k * PULL);
     b.coarticulation = b.coarticulation.map(|k| k * PULL);
-    let (left_end, right_start) = (targets(segments, i).1, targets(segments, i + 1).0);
+    let (left_end, right_start) = (targets(segments, i, gender).1, targets(segments, i + 1, gender).0);
     let pull = |own: Formants, other: Formants, k: [f64; 3]| Formants {
         freq: std::array::from_fn(|j| own.freq[j] + k[j] * (other.freq[j] - own.freq[j])),
         bw: std::array::from_fn(|j| own.bw[j] + 0.5 * (other.bw[j] - own.bw[j])),
@@ -254,15 +272,15 @@ fn join(segments: &[Segment], i: usize) -> Option<Join> {
     })
 }
 
-fn formant_track(segments: &[Segment]) -> Track<Formants> {
+fn formant_track(segments: &[Segment], gender: Gender) -> Track<Formants> {
     let mut track = Track::new();
     for (i, seg) in segments.iter().enumerate() {
         if seg.phoneme == Phoneme::Pause {
             continue;
         }
-        let (start, end) = targets(segments, i);
-        let left = i.checked_sub(1).and_then(|j| join(segments, j));
-        let right = join(segments, i);
+        let (start, end) = targets(segments, i, gender);
+        let left = i.checked_sub(1).and_then(|j| join(segments, j, gender));
+        let right = join(segments, i, gender);
         let (s, e, d) = (seg.start, seg.end(), seg.duration);
         let mut lead = left.as_ref().map_or(0.0, |j| j.right_ms);
         let mut trail = right.as_ref().map_or(0.0, |j| j.left_ms);
@@ -303,7 +321,7 @@ fn formant_track(segments: &[Segment]) -> Track<Formants> {
         }
     }
     if track.points.is_empty() {
-        let (start, _) = targets(segments, 0);
+        let (start, _) = targets(segments, 0, gender);
         track.push(0.0, start);
     }
     track.sort();
@@ -426,7 +444,7 @@ fn sound_track(segments: &[Segment]) -> Track<Sound> {
                 let mut start_sound = steady;
                 let mut end_sound = steady;
                 // Voicing fades a little at the end of a sentence.
-                if seg.phoneme.is_vowel() && seg.in_clause_final_syllable {
+                if seg.phoneme.is_vowel() && seg.in_clause_final_syllable && !seg.singing {
                     end_sound.av -= 4.0;
                 }
                 // English vowels are nasalized next to nasal consonants: over
@@ -463,7 +481,7 @@ fn creak_track(segments: &[Segment]) -> Track<f64> {
     let mut track = Track::new();
     track.push(0.0, 0.0);
     for (i, seg) in segments.iter().enumerate() {
-        if !seg.glottalized || i == 0 {
+        if !seg.glottalized || seg.singing || i == 0 {
             continue;
         }
         let before = &segments[i - 1];
@@ -482,12 +500,66 @@ fn creak_track(segments: &[Segment]) -> Track<f64> {
     track
 }
 
-/// Builds synthesizer frames from timed segments and pitch keyframes, using
-/// the voice's open quotient and spectral tilt.
-pub fn frames(segments: &[Segment], pitch: &[(f64, f64)], oq: f64, tl: f64) -> Vec<(f64, Frame)> {
-    let formants = formant_track(segments);
+/// How quickly singing's vibrato and steadiness change, ms: at once, in effect, but
+/// never across the whole gap to the next frame.
+const SINGING_EDGE: f64 = 1.0;
+
+/// Vibrato and steadiness over time. A sung stretch is steady throughout, with
+/// vibrato while its latest pitch is a note and none while it is in Hz.
+fn singing_tracks(segments: &[Segment]) -> (Track<f64>, Track<f64>) {
+    let (mut vibrato, mut steady) = (Track::new(), Track::new());
+    vibrato.push(0.0, 0.0);
+    steady.push(0.0, 0.0);
+    let size = |note: bool| if note { VIBRATO_CENTS } else { 0.0 };
+    let mut i = 0;
+    while i < segments.len() {
+        if !segments[i].singing {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while segments.get(i).is_some_and(|s| s.singing) {
+            i += 1;
+        }
+        let stretch = &segments[start..i];
+        let (begin, end) = (stretch[0].start, stretch[stretch.len() - 1].end());
+        steady.push(begin - SINGING_EDGE, 0.0);
+        steady.push(begin, 1.0);
+        steady.push(end, 1.0);
+        steady.push(end + SINGING_EDGE, 0.0);
+        let mut now = size(stretch.iter().find_map(|s| s.written.pitch).is_some_and(is_note));
+        vibrato.push(begin - SINGING_EDGE, 0.0);
+        vibrato.push(begin, now);
+        for seg in stretch {
+            let Some(pitch) = seg.written.pitch else { continue };
+            let next = size(is_note(pitch));
+            if next != now {
+                vibrato.push(seg.start, now);
+                vibrato.push(seg.start + SINGING_EDGE, next);
+                now = next;
+            }
+        }
+        vibrato.push(end, now);
+        vibrato.push(end + SINGING_EDGE, 0.0);
+    }
+    vibrato.sort();
+    steady.sort();
+    (vibrato, steady)
+}
+
+/// Breath noise through voicing at this voice's level: it follows the voicing,
+/// so it fades with it and is gone when the voicing stops.
+fn breath(s: &Sound, breathiness: f64) -> f64 {
+    if breathiness > 0.0 && s.av > 0.0 { s.ah.max(breathiness + s.av - 60.0) } else { s.ah }
+}
+
+/// Builds synthesizer frames from timed segments and pitch keyframes, for the
+/// voice's gender and quality.
+pub fn frames(segments: &[Segment], pitch: &[(f64, f64)], voice: &Voice) -> Vec<(f64, Frame)> {
+    let formants = formant_track(segments, voice.gender);
     let sound = sound_track(segments);
     let creak = creak_track(segments);
+    let (vibrato, steady) = singing_tracks(segments);
     let mut f0 = Track::new();
     for &(t, hz) in pitch {
         f0.push(t, hz);
@@ -504,6 +576,8 @@ pub fn frames(segments: &[Segment], pitch: &[(f64, f64)], oq: f64, tl: f64) -> V
         .chain(sound.points.iter().map(|p| p.0))
         .chain(f0.points.iter().map(|p| p.0))
         .chain(creak.points.iter().map(|p| p.0))
+        .chain(vibrato.points.iter().map(|p| p.0))
+        .chain(steady.points.iter().map(|p| p.0))
         .chain([0.0, end])
         .filter(|&t| (0.0..=end).contains(&t))
         .collect();
@@ -511,6 +585,8 @@ pub fn frames(segments: &[Segment], pitch: &[(f64, f64)], oq: f64, tl: f64) -> V
     times.dedup_by(|a, b| (*a - *b).abs() < 0.05);
 
     let defaults = Frame::default();
+    let upper = voice.gender.upper_share();
+    let widths = voice.gender.bandwidth_share();
     times
         .into_iter()
         .map(|t| {
@@ -519,16 +595,32 @@ pub fn frames(segments: &[Segment], pitch: &[(f64, f64)], oq: f64, tl: f64) -> V
             let frame = Frame {
                 f0: f0.at(t),
                 av: s.av,
-                oq,
-                tl: tl + s.tl,
+                oq: voice.open_quotient,
+                tl: voice.tilt + s.tl,
                 creak: creak.at(t),
-                ah: s.ah,
+                vibrato: vibrato.at(t),
+                steady: steady.at(t),
+                ah: breath(&s, voice.breathiness),
                 af: s.af,
-                freq: [f.freq[0], f.freq[1], f.freq[2], defaults.freq[3], defaults.freq[4], s.f6],
-                bw: [f.bw[0], f.bw[1], f.bw[2], defaults.bw[3], defaults.bw[4], defaults.bw[5]],
-                fnp: s.fnp,
+                freq: [
+                    f.freq[0],
+                    f.freq[1],
+                    f.freq[2],
+                    defaults.freq[3] * upper,
+                    defaults.freq[4] * upper,
+                    s.f6 * upper,
+                ],
+                bw: [
+                    f.bw[0] * widths,
+                    f.bw[1] * widths,
+                    f.bw[2] * widths,
+                    defaults.bw[3] * widths,
+                    defaults.bw[4] * widths,
+                    defaults.bw[5] * widths,
+                ],
+                fnp: s.fnp * upper,
                 bnp: s.bnp,
-                fnz: s.fnz,
+                fnz: s.fnz * upper,
                 bnz: 100.0,
                 par_amp: s.par_amp,
                 par_bw: defaults.par_bw,
@@ -590,7 +682,16 @@ mod tests {
         let mut segs = segments(&parse(input).unwrap());
         assign_durations(&mut segs, 1.0);
         let pitch = pitch_keyframes(&segs, 110.0, 1.0);
-        let frames = frames(&segs, &pitch, 0.4, 0.0);
+        let frames = frames(&segs, &pitch, &Voice { open_quotient: 0.4, ..Voice::default() });
+        (segs, frames)
+    }
+
+    /// The same as [`plan`], for the female model.
+    fn female_plan(input: &str) -> (Vec<Segment>, Vec<(f64, Frame)>) {
+        let mut segs = segments(&parse(input).unwrap());
+        assign_durations(&mut segs, 1.0);
+        let pitch = pitch_keyframes(&segs, 210.0, 1.0);
+        let frames = frames(&segs, &pitch, &Voice { gender: Gender::Female, breathiness: 36.0, ..Voice::default() });
         (segs, frames)
     }
 
@@ -605,6 +706,83 @@ mod tests {
         assert!((frames.last().unwrap().0 - segs.last().unwrap().end()).abs() < 1e-9);
         assert!(frames.windows(2).all(|w| w[1].0 > w[0].0));
         assert!(frames.iter().all(|(_, f)| f.freq.iter().chain(&f.bw).all(|x| x.is_finite() && *x > 0.0)));
+    }
+
+    #[test]
+    fn notes_have_vibrato_and_hz_have_none() {
+        let at_vowel = |input: &str| {
+            let (segs, frames) = plan(input);
+            let vowel = segs.iter().find(|s| s.phoneme == Phoneme::AA).unwrap();
+            frame_at(&frames, vowel.start + vowel.duration / 2.0)
+        };
+        let note = at_vowel("[AA1<1000,39>].");
+        assert_eq!((note.vibrato, note.steady, note.f0), (VIBRATO_CENTS, 1.0, 523.25));
+        let hz = at_vowel("[AA1<1000,40>].");
+        assert_eq!((hz.vibrato, hz.steady, hz.f0), (0.0, 1.0, 40.0));
+        let top = at_vowel("[AA1<1000,550>].");
+        assert_eq!((top.vibrato, top.steady, top.f0), (0.0, 1.0, 550.0));
+        // Ordinary speech has neither.
+        let (_, frames) = plan("[P AA1 T].");
+        assert!(frames.iter().all(|(_, f)| f.vibrato == 0.0 && f.steady == 0.0));
+    }
+
+    #[test]
+    fn vibrato_changes_with_the_kind_of_pitch() {
+        let (segs, frames) = plan("[AA1<500,20> IY1<500,200> AA1<500,20>].");
+        let mid = |i: usize| frame_at(&frames, segs[i].start + segs[i].duration / 2.0).vibrato;
+        assert_eq!((mid(1), mid(2), mid(3)), (VIBRATO_CENTS, 0.0, VIBRATO_CENTS));
+    }
+
+    #[test]
+    fn sung_vowels_hold_their_level_and_never_creak() {
+        let (segs, frames) = plan("[B AE1<800,20> T].");
+        let vowel = segs.iter().find(|s| s.phoneme == Phoneme::AE).unwrap();
+        assert_eq!(frame_at(&frames, vowel.end() - 10.0).av, frame_at(&frames, vowel.start + 100.0).av);
+        assert!(frames.iter().all(|(_, f)| f.creak == 0.0));
+    }
+
+    #[test]
+    fn the_female_model_follows_its_own_table() {
+        let f = |input: &str, vowel: Phoneme| {
+            let (segs, frames) = female_plan(input);
+            let seg = segs.iter().find(|s| s.phoneme == vowel).unwrap();
+            frame_at(&frames, seg.start + seg.duration / 2.0)
+        };
+        // /i/ rises more in F1 than /ɪ/, as measured.
+        let iy = f("[P IY1 P].", Phoneme::IY);
+        assert!((iy.freq[0] - 338.0 * 1.29).abs() < 2.0 && (iy.freq[1] - 2319.0 * 1.19).abs() < 3.0, "{:?}", iy.freq);
+        let ih = f("[P IH1 P].", Phoneme::IH);
+        assert!((ih.freq[0] - 433.0 * 1.12).abs() < 2.0, "{:?}", ih.freq);
+        assert!(iy.freq[3] > 3800.0 && iy.bw[0] > 70.0);
+        // Nasal resonances rise together, so they still cancel outside nasals.
+        assert_eq!(iy.fnp, iy.fnz);
+        let n = f("[AA1 N AA1].", Phoneme::N);
+        assert!(n.fnz > 1600.0 && n.fnp != n.fnz);
+    }
+
+    #[test]
+    fn the_female_model_scales_once_and_holds_what_is_held() {
+        // /h/ takes the shape of its vowel, not that scaled again.
+        let (segs, frames) = female_plan("[HH IY1].");
+        let h = frame_at(&frames, segs[1].start + 1.0);
+        assert!((h.freq[1] - 2319.0 * 1.19).abs() < 3.0, "{:?}", h.freq);
+        // "four" stays steady before the R, with no glide from the two shares.
+        let held = targets(&segments(&parse("[F OW1 R].").unwrap()), 1, Gender::Female);
+        assert_eq!(held.0.freq, held.1.freq);
+    }
+
+    #[test]
+    fn breath_noise_follows_voicing() {
+        let (segs, frames) = female_plan("[P AA1 S AA1].");
+        let vowel = segs.iter().find(|s| s.phoneme == Phoneme::AA).unwrap();
+        let mid = frame_at(&frames, vowel.start + vowel.duration / 2.0);
+        assert!(mid.ah > 30.0 && mid.ah < 40.0, "{}", mid.ah);
+        let s = segs.iter().find(|s| s.phoneme == Phoneme::S).unwrap();
+        assert_eq!(frame_at(&frames, s.start + s.duration / 2.0).ah, 0.0);
+        // The male voice has none.
+        let (segs, frames) = plan("[P AA1 S AA1].");
+        let vowel = segs.iter().find(|s| s.phoneme == Phoneme::AA).unwrap();
+        assert_eq!(frame_at(&frames, vowel.start + vowel.duration / 2.0).ah, 0.0);
     }
 
     #[test]

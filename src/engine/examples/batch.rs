@@ -4,9 +4,10 @@
 //!
 //! Each line of the file is an id and a text, separated by a tab, optionally
 //! followed by an ARPAbet transcription to use instead of the text. Lines
-//! starting with # are comments.
+//! starting with # are comments. The voice is the default, or the one named by
+//! the KLATTARA_VOICE environment variable.
 
-use klattara::{Voice, speak_phonemes, speak_text, wav};
+use klattara::{Voice, find_voice, speak_phonemes, speak_text, wav};
 
 const SAMPLE_RATE: u32 = 22050;
 
@@ -17,7 +18,9 @@ fn main() {
         std::process::exit(2);
     };
     let rate = rest.first().map_or(1.0, |r| r.parse().expect("rate must be a number"));
-    let voice = Voice { rate, ..Voice::default() };
+    let chosen = std::env::var("KLATTARA_VOICE")
+        .map_or(Voice::default(), |name| Voice::from(find_voice(&name).expect("there is no voice of that name")));
+    let voice = Voice { rate, ..chosen };
     std::fs::create_dir_all(folder).expect("could not create the output folder");
     let list = std::fs::read_to_string(sentences).expect("could not read the sentence file");
     for line in list.lines().filter(|l| !l.trim().is_empty() && !l.starts_with('#')) {

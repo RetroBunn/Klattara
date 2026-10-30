@@ -175,6 +175,7 @@ impl Synth {
         let sr = self.sample_rate;
         self.source.set_targets(p.f0, p.oq);
         self.source.set_creak(p.creak);
+        self.source.set_singing(p.vibrato, p.steady);
         self.tilt.set(p.tl, sr);
         self.nasal_zero.set(p.fnz, p.bnz, sr);
         self.nasal_pole.set(p.fnp, p.bnp, sr);
