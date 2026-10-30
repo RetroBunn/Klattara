@@ -1393,6 +1393,9 @@ pub fn phrases_with(text: &str, expand_abbreviations: bool, phrase_prediction: b
                 let mut chars = word.chars();
                 let capitalized =
                     !sentence_start && chars.next().is_some_and(char::is_uppercase) && chars.any(char::is_lowercase);
+                // Any capital makes it the month, even where capitals say
+                // nothing about other words: "August is hot", "AUGUST".
+                let capitalized = capitalized || (word != "august" && word.eq_ignore_ascii_case("august"));
                 written.push(Written {
                     text: word.to_lowercase(),
                     pronunciation,
@@ -1420,7 +1423,9 @@ pub fn phrases_with(text: &str, expand_abbreviations: bool, phrase_prediction: b
                         pronunciation: pronounce(word),
                         text: word.to_string(),
                         function: false,
-                        capitalized: false,
+                        // From a date or "Aug.", so the month, not the
+                        // adjective, which the homograph table takes otherwise.
+                        capitalized: word == "august",
                         plain: false,
                     });
                 }
@@ -1719,6 +1724,19 @@ mod tests {
         assert_eq!(attach(arpabet("D AO1 G"), "s"), arpabet("D AO1 G Z"));
         assert_eq!(attach(arpabet("B AA1 K S"), "s"), arpabet("B AA1 K S IH0 Z"));
         assert_eq!(attach(arpabet("W AO1 N T"), "ed"), arpabet("W AO1 N T IH0 D"));
+    }
+
+    #[test]
+    fn august_is_the_month_unless_written_in_lowercase() {
+        let month = "[AA1 G AH0 S T]";
+        for text in ["It was August 5.", "In August, it rained.", "August is hot.", "AUGUST", "Aug. 5", "Aug 5, 2014"] {
+            assert!(say(text).contains(month), "{text}: {}", say(text));
+        }
+        for text in ["08/05/2014", "08-25-2015", "25.08.2014", "2014-08-05"] {
+            assert!(say(text).starts_with(month), "{text}: {}", say(text));
+        }
+        // The adjective has its stress on the second syllable.
+        assert_eq!(say("an august body"), "[AH0 N] [AA2 G AH1 S T] [B AA1 D IY0].");
     }
 
     #[test]

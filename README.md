@@ -13,8 +13,8 @@ It ships as an add-on for the NVDA screen reader, and as a Windows library (klat
 - Text normalization for everyday reading:
   - Numbers, including ordinals, decimals, fractions and phone numbers.
   - Money in dollars, pounds, euros and yen, with scales ("$5M", "$10bn") and other countries' dollars ("US$", "A$").
-  - Times, dates and years.
-  - Units of measure, including squares, cubes and rates ("km²", "m³/s", "km/h").
+  - Times, including with a dot before am or pm ("1.40 pm"), dates and years. Numeric dates are read month first ("10/04/2014" is October fourth), unless only day first can be right ("25/08/2014"). Dates with dots are read day first ("10.04.2014" is April tenth).
+  - Units of measure, including squares, cubes and rates ("km²", "m³/s", "km/h"), and feet and inches marks ("6' 1"").
   - Roman numerals: a king's or pope's number after the name ("Henry VIII" is "Henry the eighth"), and a plain number elsewhere ("World War II", "Final Fantasy VII").
   - Abbreviations, including US states in addresses, and two capital letters spelled in ordinary text ("the US", "photo ID").
   - Greek letters, web and email addresses ("Games.com", "name@example.com"), and British spellings.
