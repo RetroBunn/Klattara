@@ -1,0 +1,7 @@
+[workspace]
+resolver = "3"
+members = ["src/engine", "src/plat/windows"]
+
+[profile.release]
+lto = true
+codegen-units = 1

@@ -1,0 +1,202 @@
+# Word pairs that differ in one sound, grouped by the kind of difference.
+# Columns: group, first word, second word.
+# The initial-consonant groups follow the feature classes of the Diagnostic
+# Rhyme Test (Voiers 1977), with common words chosen where the original
+# used rare ones; the final-consonant groups follow the Modified Rhyme Test
+# (House et al. 1965) in spirit.
+voicing	bat	pat
+voicing	bay	pay
+voicing	bill	pill
+voicing	bear	pair
+voicing	dime	time
+voicing	den	ten
+voicing	dough	toe
+voicing	dug	tug
+voicing	goat	coat
+voicing	gold	cold
+voicing	girl	curl
+voicing	gap	cap
+voicing	vine	fine
+voicing	vast	fast
+voicing	van	fan
+voicing	zip	sip
+voicing	zoo	sue
+voicing	zeal	seal
+voicing	gin	chin
+voicing	jeer	cheer
+voicing	joke	choke
+nasality	meat	beat
+nasality	mitt	bit
+nasality	mad	bad
+nasality	mall	ball
+nasality	moan	bone
+nasality	mend	bend
+nasality	mug	bug
+nasality	need	deed
+nasality	nip	dip
+nasality	neck	deck
+nasality	knock	dock
+nasality	nose	doze
+nasality	nine	dine
+nasality	news	dues
+stop or fricative	van	ban
+stop or fricative	vest	best
+stop or fricative	vote	boat
+stop or fricative	fan	pan
+stop or fricative	fig	pig
+stop or fricative	fill	pill
+stop or fricative	thick	tick
+stop or fricative	thank	tank
+stop or fricative	thin	tin
+stop or fricative	those	doze
+stop or fricative	though	dough
+stop or fricative	then	den
+stop or fricative	shop	chop
+stop or fricative	sheet	cheat
+stop or fricative	shoes	choose
+stop or fricative	share	chair
+stop or fricative	sell	tell
+stop or fricative	sip	tip
+sibilants	sing	thing
+sibilants	saw	thaw
+sibilants	sank	thank
+sibilants	sum	thumb
+sibilants	sigh	thigh
+sibilants	chair	care
+sibilants	chop	cop
+sibilants	cheap	keep
+sibilants	chew	coo
+sibilants	jab	gab
+sibilants	jest	guest
+sibilants	juice	goose
+sibilants	jot	got
+place	pie	tie
+place	bin	din
+place	bark	dark
+place	moon	noon
+place	mail	nail
+place	pool	tool
+place	met	net
+place	pen	ten
+place	fin	thin
+place	fought	thought
+place	free	three
+place	key	tea
+place	keg	peg
+place	gate	date
+place	cap	tap
+place	got	dot
+place	kill	pill
+place	cold	told
+place	goal	bowl
+place	gear	dear
+final voicing	cap	cab
+final voicing	bet	bed
+final voicing	back	bag
+final voicing	bus	buzz
+final voicing	rice	rise
+final voicing	safe	save
+final voicing	lap	lab
+final voicing	mat	mad
+final voicing	pick	pig
+final voicing	seat	seed
+final voicing	proof	prove
+final voicing	ice	eyes
+final voicing	loose	lose
+final voicing	rope	robe
+final voicing	tuck	tug
+final voicing	write	ride
+final voicing	leaf	leave
+final voicing	peace	peas
+final place	cap	cat
+final place	sip	sit
+final place	sit	sick
+final place	map	mat
+final place	pick	pit
+final place	lip	lick
+final place	cup	cut
+final place	tack	tap
+final place	rib	rid
+final place	rid	rig
+final place	web	wed
+final place	tub	tug
+final place	rob	rod
+final place	sum	sun
+final place	sun	sung
+final place	ram	ran
+final place	ran	rang
+final place	dim	din
+final place	thin	thing
+final place	kin	king
+final manner	bat	bath
+final manner	pass	pat
+final manner	mass	mat
+final manner	bead	bean
+final manner	rib	rim
+final manner	cuff	cup
+final manner	bus	butt
+final manner	beef	beat
+final manner	kiss	kit
+final manner	boot	booth
+final manner	dove	dub
+vowels	beat	bit
+vowels	bit	bet
+vowels	bet	bat
+vowels	bat	butt
+vowels	cut	cot
+vowels	luck	look
+vowels	pull	pool
+vowels	book	buck
+vowels	bait	bet
+vowels	bait	bite
+vowels	bite	bout
+vowels	boat	boot
+vowels	boat	bought
+vowels	boy	buy
+vowels	bird	bud
+vowels	hurt	hut
+vowels	seen	sin
+vowels	pin	pen
+vowels	said	sad
+vowels	coat	cot
+vowels	feel	fail
+liquids and glides	lane	rain
+liquids and glides	light	right
+liquids and glides	lock	rock
+liquids and glides	glass	grass
+liquids and glides	clown	crown
+liquids and glides	play	pray
+liquids and glides	fly	fry
+liquids and glides	long	wrong
+liquids and glides	wed	red
+liquids and glides	wipe	ripe
+liquids and glides	wing	ring
+liquids and glides	lake	wake
+liquids and glides	yell	well
+liquids and glides	collect	correct
+liquids and glides	belly	berry
+liquids and glides	alive	arrive
+clusters	spin	sin
+clusters	stick	sick
+clusters	sport	sort
+clusters	split	slit
+clusters	blend	bend
+clusters	tree	tea
+clusters	pray	pay
+clusters	black	back
+clusters	slip	sip
+clusters	snow	so
+clusters	string	sting
+clusters	train	rain
+clusters	cloud	loud
+clusters	smile	mile
+clusters	bread	bed
+clusters	plant	pant
+weak syllables	police	please
+weak syllables	polite	plight
+weak syllables	parade	prayed
+weak syllables	terrain	train
+weak syllables	derive	drive
+weak syllables	below	blow
+weak syllables	support	sport
+weak syllables	cologne	clone

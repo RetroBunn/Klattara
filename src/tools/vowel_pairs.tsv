@@ -1,0 +1,57 @@
+# Word pairs that differ only in the vowel, for word_pairs.py --pairs.
+# Columns: group, first word, second word.
+ee or i	seat	sit
+ee or i	feel	fill
+ee or i	heat	hit
+ee or i	deep	dip
+ee or i	sheep	ship
+ee or i	leak	lick
+ee or i	peel	pill
+ee or i	meal	mill
+i or e	bit	bet
+i or e	pit	pet
+i or e	tin	ten
+i or e	lid	led
+i or e	sit	set
+i or e	big	beg
+i or e	fill	fell
+i or e	pick	peck
+i or e	hid	head
+i or e	bill	bell
+i or e	pin	pen
+i or e	wit	wet
+e or a	bed	bad
+e or a	met	mat
+e or a	men	man
+e or a	set	sat
+e or a	pet	pat
+e or a	pen	pan
+e or a	send	sand
+e or a	bend	band
+e or a	peck	pack
+e or a	said	sad
+i or a	bid	bad
+i or a	sit	sat
+i or a	lid	lad
+i or a	pick	pack
+i or a	tin	tan
+ay or e	late	let
+ay or e	pain	pen
+ay or e	sale	sell
+ay or e	wait	wet
+ay or e	gate	get
+ay or e	taste	test
+a or u	cap	cup
+a or u	bat	butt
+a or u	ran	run
+a or u	hat	hut
+a or u	mad	mud
+o or u	cot	cut
+o or u	hot	hut
+o or u	lock	luck
+o or u	dock	duck
+o or u	shot	shut
+oo vowels	look	luck
+oo vowels	book	buck
+oo vowels	pull	pool
+oo vowels	full	fool

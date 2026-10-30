@@ -1,0 +1,63 @@
+# Word pairs that differ only in the last consonant, for word_pairs.py --pairs.
+# Columns: group, first word, second word.
+stop place	sip	sit
+stop place	sit	sick
+stop place	map	mat
+stop place	pick	pit
+stop place	lip	lick
+stop place	cup	cut
+stop place	tack	tap
+stop place	rib	rid
+stop place	rid	rig
+stop place	web	wed
+stop place	tub	tug
+stop place	rob	rod
+stop place	hop	hot
+stop place	back	bat
+stop place	lap	lack
+stop place	rat	rack
+stop place	bud	bug
+stop place	tip	tick
+nasal place	sum	sun
+nasal place	sun	sung
+nasal place	ram	ran
+nasal place	ran	rang
+nasal place	dim	din
+nasal place	thin	thing
+nasal place	kin	king
+nasal place	team	teen
+nasal place	comb	cone
+voicing	cap	cab
+voicing	bet	bed
+voicing	back	bag
+voicing	bus	buzz
+voicing	rice	rise
+voicing	safe	save
+voicing	lap	lab
+voicing	mat	mad
+voicing	pick	pig
+voicing	seat	seed
+voicing	proof	prove
+voicing	loose	lose
+voicing	rope	robe
+voicing	tuck	tug
+voicing	write	ride
+voicing	leaf	leave
+voicing	peace	peas
+voicing	heart	hard
+voicing	tight	tide
+voicing	coat	code
+voicing	mate	made
+manner	bat	bath
+manner	pass	pat
+manner	mass	mat
+manner	bead	bean
+manner	rib	rim
+manner	cuff	cup
+manner	bus	butt
+manner	beef	beat
+manner	kiss	kit
+manner	boot	booth
+manner	dove	dub
+manner	mitt	miss
+manner	cart	card

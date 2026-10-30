@@ -1,0 +1,128 @@
+# Test sentences: id, text, and optionally an ARPAbet transcription to use instead of the text.
+# Harvard sentences, lists 1 to 12 (IEEE 1969 recommended practice for speech quality measurements).
+h01	The birch canoe slid on the smooth planks.
+h02	Glue the sheet to the dark blue background.
+h03	It's easy to tell the depth of a well.
+h04	These days a chicken leg is a rare dish.
+h05	Rice is often served in round bowls.
+h06	The juice of lemons makes fine punch.
+h07	The box was thrown beside the parked truck.
+h08	The hogs were fed chopped corn and garbage.
+h09	Four hours of steady work faced us.
+h10	A large size in stockings is hard to sell.
+h11	The boy was there when the sun rose.
+h12	A rod is used to catch pink salmon.
+h13	The source of the huge river is the clear spring.
+h14	Kick the ball straight and follow through.
+h15	Help the woman get back to her feet.
+h16	A pot of tea helps to pass the evening.
+h17	Smoky fires lack flame and heat.
+h18	The soft cushion broke the man's fall.
+h19	The salt breeze came across from the sea.
+h20	The girl at the booth sold fifty bonds.
+h21	The small pup gnawed a hole in the sock.
+h22	The fish twisted and turned on the bent hook.
+h23	Press the pants and sew a button on the vest.
+h24	The swan dive was far short of perfect.
+h25	The beauty of the view stunned the young boy.
+h26	Two blue fish swam in the tank.
+h27	Her purse was full of useless trash.
+h28	The colt reared and threw the tall rider.
+h29	It snowed, rained, and hailed the same morning.
+h30	Read verse out loud for pleasure.
+h31	Hoist the load to your left shoulder.
+h32	Take the winding path to reach the lake.
+h33	Note closely the size of the gas tank.
+h34	Wipe the grease off his dirty face.
+h35	Mend the coat before you go out.
+h36	The wrist was badly strained and hung limp.
+h37	The stray cat gave birth to kittens.
+h38	The young girl gave no clear response.
+h39	The meal was cooked before the bell rang.
+h40	What joy there is in living.
+h41	A king ruled the state in the early days.
+h42	The ship was torn apart on the sharp reef.
+h43	Sickness kept him home the third week.
+h44	The wide road shimmered in the hot sun.
+h45	The lazy cow lay in the cool grass.
+h46	Lift the square stone over the fence.
+h47	The rope will bind the seven books at once.
+h48	Hop over the fence and plunge in.
+h49	The friendly gang left the drug store.
+h50	Mesh wire keeps chicks inside.
+h51	The glow deepened in the eyes of the sweet girl.
+h52	Bring your problems to the wise chief.
+h53	Write a fond note to the friend you cherish.
+h54	Clothes and lodging are free to new men.
+h55	We frown when events take a bad turn.
+h56	Port is a strong wine with a smoky taste.
+h57	The young kid jumped the rusty gate.
+h58	Guess the results from the first scores.
+h59	A salt pickle tastes fine with ham.
+h60	The just claim got the right verdict.
+h61	These thistles bend in a high wind.
+h62	Pure bred poodles have curls.
+h63	The tree top waved in a graceful way.
+h64	The spot on the blotter was made by green ink.
+h65	Mud was spattered on the front of his white shirt.
+h66	The cigar burned a hole in the desk top.
+h67	The empty flask stood on the tin tray.
+h68	A speedy man can beat this track mark.
+h69	He broke a new shoe lace that day.
+h70	The coffee stand is too high for the couch.
+h71	The urge to write short stories is rare.
+h72	The pencils have all been used.
+h73	The pirates seized the crew of the lost ship.
+h74	We tried to replace the coin but failed.
+h75	She sewed the torn coat quite neatly.
+h76	The sofa cushion is red and of light weight.
+h77	The jacket hung on the back of the wide chair.
+h78	At that high level the air is pure.
+h79	Drop the two when you add the figures.
+h80	A filing case is now hard to buy.
+h81	An abrupt start does not win the prize.
+h82	Wood is best for making toys and blocks.
+h83	The office paint was a dull, sad tan.
+h84	He knew the skill of the great young actress.
+h85	A rag will soak up spilled water.
+h86	A shower of dirt fell from the hot pipes.
+h87	Steam hissed from the broken valve.
+h88	The child almost hurt the small dog.
+h89	There was a sound of dry leaves outside.
+h90	The sky that morning was clear and bright blue.
+h91	Torn scraps littered the stone floor.
+h92	Sunday is the best part of the week.
+h93	Add the sum to the product of these three.
+h94	The first part of the plan needs changing.
+h95	The ancient coin was quite dull and worn.
+h96	The fish twisted and turned on the bent hook.
+h97	Press the pants and sew a button on the vest.
+h98	The swan dive was far short of perfect.
+h99	The beauty of the view stunned the young boy.
+h100	Two blue fish swam in the tank.
+h101	Her purse was full of useless trash.
+h102	The colt reared and threw the tall rider.
+h103	It snowed, rained, and hailed the same morning.
+h104	Read verse out loud for pleasure.
+h105	Hoist the load to your left shoulder.
+h106	Take the winding path to reach the lake.
+h107	Note closely the size of the gas tank.
+h108	Wipe the grease off his dirty face.
+h109	Mend the coat before you go out.
+h110	The wrist was badly strained and hung limp.
+h111	The stray cat gave birth to kittens.
+h112	The young girl gave no clear response.
+h113	The meal was cooked before the bell rang.
+h114	What joy there is in living.
+h115	A king ruled the state in the early days.
+h116	The ship was torn apart on the sharp reef.
+h117	Sickness kept him home the third week.
+h118	The wide road shimmered in the hot sun.
+h119	The lazy cow lay in the cool grass.
+h120	Lift the square stone over the fence.
+# Other sentences.
+x01	Hello world.
+x02	The old man sat in a rocker.
+x03	The quick brown fox jumps over the lazy dog.
+x04	Is it raining? Yes, it is! Bring an umbrella.
+x05	One, two, three, four, five.

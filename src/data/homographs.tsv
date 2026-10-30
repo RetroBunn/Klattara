@@ -1,0 +1,167 @@
+# Klattara's homographs, built by src/tools/build_homographs.py from the
+# training half of the Wikipedia homograph data (Gorman, Mazovetskiy and
+# Nikolaev 2018; Apache License 2.0) and CMUdict. Each line: the word, the
+# reading most common in lowercase and when capitalized inside a sentence
+# (numbered from 0), then each reading as role:ARPAbet.
+abstract	0	0	noun:AE1 B S T R AE2 K T	verb:AH0 B S T R AE1 K T
+abuse	0	0	noun:AH0 B Y UW1 S	verb:AH0 B Y UW1 Z
+abuses	0	0	noun:AH0 B Y UW1 S IH0 Z	verb:AH0 B Y UW1 Z AH0
+addict	0	0	noun:AE1 D AH0 K T	verb:AH0 D IH1 K T
+advocate	0	0	noun:AE1 D V AH0 K AH0 T	verb:AE1 D V AH0 K EY2 T
+affect	1	1	noun:AE1 F EH2 K T	verb:AH0 F EH1 K T
+affiliate	0	0	noun:AH0 F IH1 L IY0 AH0 T	verb:AH0 F IH1 L IY0 EY2 T
+aged	1	1	noun:EY1 JH IH0 D	other:EY1 JH D
+aggregate	0	0	noun:AE1 G R AH0 G AH0 T	verb:AE1 G R AH0 G EY0 T
+alternate	0	0	noun:AA1 L T ER0 N AH0 T	verb:AA1 L T ER0 N EY2 T
+analyses	0	0	noun:AH0 N AE1 L AH0 S IY2 Z	verb:AE1 N AH0 L AY2 Z AH0 Z
+animate	1	1	noun:AE1 N AH0 M AH0 T	verb:AE1 N AH0 M EY2 T
+appropriate	0	0	noun:AH0 P R OW1 P R IY0 AH0 T	verb:AH0 P R OW1 P R IY0 EY2 T
+approximate	0	0	noun:AH0 P R AA1 K S AH0 M AH0 T	verb:AH0 P R AA1 S AH0 M EY2 T
+articulate	1	1	noun:AA0 R T IH1 K Y AH0 L AH0 T	verb:AA0 R T IH1 K Y AH0 L EY2 T
+associate	0	0	noun:AH0 S OW1 S IY0 AH0 T	verb:AH0 S OW1 S IY0 EY2 T
+attribute	0	0	noun:AE1 T R AH0 B Y UW2 T	verb:AH0 T R IH1 B Y UW2 T
+august	0	1	noun:AA2 G AH1 S T	other:AA1 G AH0 S T	other:AW1 G UH2 S T
+axes	0	0	noun:AE1 K S IY2 Z	other:AE1 K S AH0 Z
+bass	0	0	other:B EY1 S	other:B AE1 S
+blessed	1	0	noun:B L EH1 S AH0 D	verb:B L EH1 S T
+bologna	1	0	other:B AH0 L OW1 N Y AH0	other:B AH0 L OW1 N IY0
+bow	1	0	other:B OW1	other:B AW1
+buffet	0	0	noun:B AH0 F EY1	verb:B AH1 F AH0 T
+celtic	1	1	other:S EH1 L T IH0 K	other:K EH1 L T IH0 K
+close	0	0	noun:K L OW1 S	verb:K L OW1 Z
+combine	1	0	noun:K AA1 M B AY0 N	verb:K AH0 M B AY1 N
+compact	0	0	noun:K AA1 M P AE0 K T	verb:K AH0 M P AE1 K T
+compound	0	0	noun:K AA1 M P AW0 N D	verb:K AH0 M P AW1 N D
+compress	1	0	noun:K AA1 M P R EH0 S	verb:K AH0 M P R EH1 S
+conduct	1	0	noun:K AA1 N D AH0 K T	verb:K AH0 N D AH1 K T
+confines	0	0	noun:K AA1 N F AY2 N Z	verb:K AH0 N F AY1 N Z
+conflict	0	0	noun:K AA1 N F L IH0 K T	verb:K AH0 N F L IH1 K T
+conglomerate	0	0	noun:K AH0 N G L AA1 M ER0 AH0 T	verb:K AH0 N G L AA1 M ER0 EY2 T
+conjugate	0	0	noun:K AA1 N JH AH0 G AH0 T	verb:K AA1 N JH AH0 G EY2 T
+conscript	0	0	noun:K AA1 N S K R IH2 P T	verb:K AH0 N S K R IH1 P T
+console	0	0	noun:K AA1 N S OW0 L	verb:K AH0 N S OW1 L
+consort	0	0	noun:K AA1 N S AO2 R T	verb:K AH0 N S AO1 R T
+construct	1	1	noun:K AA1 N S T R AH0 K T	verb:K AH0 N S T R AH1 K T
+consummate	0	0	noun:K AA1 N S AH0 M AH0 T	verb:K AA1 N S AH0 M EY2 T
+content	1	1	other:K AH0 N T EH1 N T	noun:K AA1 N T EH0 N T
+contest	0	0	noun:K AA1 N T EH0 S T	verb:K AH0 N T EH1 S T
+contract	0	0	noun:K AA1 N T R AE2 K T	verb:K AH0 N T R AE1 K T
+contrast	0	0	noun:K AA1 N T R AE0 S T	verb:K AH0 N T R AE1 S T
+converse	1	0	noun:K AA1 N V ER0 S	verb:K AH0 N V ER1 S
+convert	1	1	noun:K AA1 N V ER0 T	verb:K AH0 N V ER1 T
+convict	0	0	noun:K AA1 N V IH0 K T	verb:K AH0 N V IH1 K T
+coordinate	1	0	noun:K OW0 AO1 R D AH0 N AH0 T	verb:K OW0 AO1 R D AH0 N EY2 T
+correlate	1	1	noun:K AO1 R AH0 L AH0 T	verb:K AO1 R AH0 L EY2 T
+decrease	1	1	noun:D IY1 K R IY2 S	verb:D IH0 K R IY1 S
+defect	0	0	noun:D IY1 F EH0 K T	verb:D IH0 F EH1 K T
+degenerate	0	0	noun:D IH0 JH EH1 N ER0 AH0 T	verb:D IH0 JH EH1 N ER0 EY2 T
+delegate	0	0	noun:D EH1 L AH0 G AH0 T	verb:D EH1 L AH0 G EY2 T
+deliberate	0	0	noun:D IH0 L IH1 B ER0 AH0 T	verb:D IH0 L IH1 B ER0 EY2 T
+desert	0	0	noun:D EH1 Z ER0 T	verb:D IH0 Z ER1 T
+deviate	1	1	noun:D IY1 V IY2 AH0 T	verb:D IY1 V IY0 EY2 T
+diagnoses	0	0	noun:D AY2 AH0 G N OW1 S IY0 Z	verb:D AY2 AH0 G N OW1 S AH0 Z
+diffuse	0	0	noun:D IH0 F Y UW1 S	verb:D IH0 F Y UW1 Z
+discard	1	1	noun:D IH1 S K AA2 R D	verb:D IH0 S K AA1 R D
+discharge	0	0	noun:D IH1 S CH AA2 R JH	verb:D IH0 S CH AA1 R JH
+discount	0	0	noun:D IH1 S K AW0 N T	verb:D IH0 S K AW1 N T
+document	0	0	noun:D AA1 K Y UW2 M AH0 N T	verb:D AA1 K Y AH0 M EH0 N T
+dove	0	0	other:D AH1 V	verb:D OW1 V
+duplicate	0	0	noun:D UW1 P L AH0 K AH0 T	verb:D UW1 P L AH0 K EY2 T
+elaborate	0	0	noun:AH0 L AE1 B ER0 AH0 T	verb:IY2 L AE1 B ER0 EY0 T
+entrance	0	0	noun:EH1 N T R AH0 N S	verb:AH0 N T R AE1 N S
+escort	0	0	noun:EH1 S K AO0 R T	verb:AH0 S K AO1 R T
+estimate	0	0	noun:EH1 S T AH0 M AH0 T	verb:EH1 S T AH0 M EY2 T
+excuse	0	1	noun:IH0 K S K Y UW1 S	verb:IH0 K S K Y UW1 Z
+expatriate	0	0	noun:EH0 K S P EY1 T R IY0 AH0 T	verb:EH0 K S P EY1 T R IY0 EY2 T
+exploit	1	1	noun:EH1 K S P L OY2 T	verb:AH0 K S P L OY1 T
+export	0	0	noun:EH1 K S P AO0 R T	verb:AH0 K S P AO1 R T
+expose	1	1	noun:EH2 K S P OW2 Z EY1	verb:IH0 K S P OW1 Z
+extract	1	0	noun:EH1 K S T R AE2 K T	verb:IH0 K S T R AE1 K T
+fragment	0	0	noun:F R AE1 G M AH0 N T	verb:F R AE2 G M EH1 N T
+frequent	0	0	noun:F R IY1 K W AH0 N T	verb:F R IY2 K W EH1 N T
+graduate	0	0	noun:G R AE1 JH UW2 AH0 T	verb:G R AE1 JH UW0 EY2 T
+house	0	0	noun:HH AW1 S	verb:HH AW1 Z
+impact	0	0	noun:IH1 M P AE0 K T	verb:AH0 M P AE1 K T
+implant	0	0	noun:IH1 M P L AE2 N T	verb:AH0 M P L AE1 N T
+implement	1	1	noun:IH1 M P L AH0 M AH0 N T	verb:IH1 M P L AH0 M EH2 N T
+import	0	0	noun:IH1 M P AO2 R T	verb:AH0 M P AO1 R T
+incense	0	0	noun:IH1 N S EH2 N S	verb:AH0 N S EH1 N S
+incline	0	0	noun:IH1 N K L AY0 N	verb:AH0 N K L AY1 N
+increase	0	0	noun:IH1 N K R IY2 S	verb:AH0 N K R IY1 S
+increment	0	0	noun:IH1 N K R AH0 M AH0 N T	verb:IH1 N K R AH0 M EH2 N T
+initiate	1	1	noun:AH0 N IH1 SH IY2 AH0 T	verb:IH2 N IH1 SH IY0 EY2 T
+insert	0	1	noun:IH1 N S ER2 T	verb:AH0 N S ER1 T
+instrument	0	0	noun:IH1 N S T R AH0 M AH0 N T	verb:IH1 N S T R AH0 M EH2 N T
+insult	0	0	noun:IH1 N S AH2 L T	verb:IH2 N S AH1 L T
+interchange	0	0	noun:IH1 N T ER0 CH EY2 N JH	verb:IH2 N T ER0 CH EY1 N JH
+intimate	0	0	noun:IH1 N T AH0 M AH0 T	verb:IH1 N T AH0 M EY2 T
+intrigue	0	0	noun:IH1 N T R IY0 G	verb:AH0 N T R IY1 G
+invalid	0	0	noun:AH0 N V AE1 L AH0 D	noun:IH1 N V AH0 L AH0 D
+invert	1	1	noun:IH1 N V ER0 T	verb:AH0 N V ER1 T
+invite	1	1	noun:IH1 N V AY2 T	verb:AH0 N V AY1 T
+isolate	1	1	noun:AY1 S AH0 L AH0 T	verb:AY1 S AH0 L EY2 T
+jesus	0	0	other:JH IY1 Z AH0 S	other:HH EY2 S UW1 S
+job	1	1	other:JH OW1 B	other:JH AA1 B
+laminate	0	0	noun:L AE1 M AH0 N AH0 T	verb:L AE1 M AH0 N EY2 T
+lead	1	1	noun:L EH1 D	other:L IY1 D
+learned	1	1	noun:L ER1 N IH0 D	verb:L ER1 N D
+live	0	0	noun:L AY1 V	verb:L IH1 V
+lives	1	1	noun:L AY1 V Z	verb:L IH1 V Z
+mate	1	1	noun:M AA1 T EY2	other:M EY1 T
+minute	1	1	noun:M AY0 N UW1 T	noun:M IH1 N AH0 T
+misuse	0	0	noun:M IH0 S Y UW1 S	verb:M IH0 S Y UW1 Z
+mobile	0	0	noun:M OW1 B AH0 L	other:M OW2 B IY1 L	noun:M OW1 B IY2 L
+moderate	0	0	noun:M AA1 D ER0 AH0 T	verb:M AA0 D ER0 EY1 T
+moped	0	0	noun:M OW1 P EH0 D	verb:M OW1 P T
+mouth	0	0	noun:M AW1 TH	verb:M AW1 DH
+nestle	1	0	other:N EH1 S L IY1	verb:N EH1 S AH0 L
+object	0	0	noun:AA1 B JH AH0 K T	verb:AH0 B JH EH1 K T
+ornament	0	0	noun:AO1 R N AH0 M AH0 N T	verb:AO2 R N AH0 M EH1 N T
+overthrow	1	1	noun:OW1 V ER0 TH R OW2	verb:OW2 V ER0 TH R OW1
+pasty	1	1	noun:P EY1 S T IY2	noun:P AE1 S T IY2
+perfect	0	0	noun:P ER1 F AH0 K T	verb:P ER0 F EH1 K T
+perfume	0	0	noun:P ER1 F Y UW2 M	verb:P ER0 F Y UW1 M
+permit	0	0	noun:P ER1 M AH0 T	verb:P ER0 M IH1 T
+pervert	0	0	noun:P ER1 V ER0 T	verb:P ER0 V ER1 T
+pigment	0	0	noun:P IH1 G M AH0 N T	verb:P AH0 G M EH1 N T
+polish	1	0	other:P OW1 L IH0 SH	other:P AA1 L IH0 SH
+postulate	0	0	noun:P AA1 S CH AH0 L AH0 T	verb:P AA1 S CH AH0 L EY2 T
+precipitate	1	1	noun:P R AH0 S IH1 P AH0 T AH0 T	verb:P R IH0 S IH1 P IH0 T EY2 T
+predicate	0	0	noun:P R EH1 D IH0 K AH0 T	verb:P R EH1 D AH0 K EY2 T
+present	0	0	noun:P R EH1 Z AH0 N T	verb:P R IY0 Z EH1 N T
+produce	1	1	noun:P R OW1 D UW0 S	verb:P R AH0 D UW1 S
+progress	0	0	noun:P R AA1 G R EH2 S	verb:P R AH0 G R EH1 S
+project	0	0	noun:P R AA1 JH EH0 K T	verb:P R AH0 JH EH1 K T
+protest	0	0	noun:P R OW1 T EH2 S T	verb:P R AH0 T EH1 S T
+ravel	1	0	other:R AH0 V EH1 L	noun:R AE1 V AH0 L
+read	1	1	other:R EH1 D	other:R IY1 D
+reading	0	1	other:R IY1 D IH0 NG	other:R EH1 D IH0 NG
+rebel	0	0	noun:R EH1 B AH0 L	verb:R IH0 B EH1 L
+record	0	0	noun:R EH1 K ER0 D	verb:R AH0 K AO1 R D
+recount	0	0	noun:R IY1 K AW2 N T	verb:R IY2 K AW1 N T
+refund	0	0	noun:R IY1 F AH2 N D	verb:R IH0 F AH1 N D
+refuse	1	1	noun:R EH1 F Y UW2 S	verb:R AH0 F Y UW1 Z
+reject	1	1	noun:R IY1 JH EH0 K T	verb:R IH0 JH EH1 K T
+rerelease	0	0	noun:R IH1 R AH0 L IY2 S	verb:R IH2 R AH0 L IY1 S
+resume	1	1	noun:R EH1 Z AH0 M EY2	verb:R IH0 Z UW1 M
+retard	1	0	noun:R IY1 T AA2 R D	verb:R IH0 T AA1 R D
+rodeo	1	1	other:R OW2 D EY1 OW2	other:R OW1 D IY0 OW2
+row	0	0	other:R OW1	other:R AW1
+sake	1	1	other:S AA1 K EY2	noun:S EY1 K
+separate	0	0	noun:S EH1 P ER0 IH0 T	verb:S EH1 P ER0 EY2 T
+sow	1	0	noun:S AW1	verb:S OW1
+subject	0	0	noun:S AH1 B JH EH2 K T	verb:S AH0 B JH EH1 K T
+subordinate	0	0	noun:S AH0 B AO1 R D AH0 N AH0 T	verb:S AH0 B AO1 R D AH0 N EY2 T
+supplement	0	0	noun:S AH1 P L AH0 M AH0 N T	verb:S AH1 P L AH0 M EH2 N T
+suspect	0	0	noun:S AH1 S P EH2 K T	verb:S AH0 S P EH1 K T
+syndicate	0	0	noun:S IH1 N D IH0 K AH0 T	verb:S IH1 N D AH0 K EY2 T
+tear	1	1	noun:T IH1 R	verb:T EH1 R
+transform	1	1	noun:T R AE1 N S F AO0 R M	verb:T R AE0 N S F AO1 R M
+transplant	0	0	noun:T R AE1 N S P L AE2 N T	verb:T R AE0 N S P L AE1 N T
+transport	0	0	noun:T R AE1 N S P AO0 R T	verb:T R AE0 N S P AO1 R T
+upset	0	0	noun:AH1 P S EH2 T	verb:AH0 P S EH1 T
+use	0	0	noun:Y UW1 S	verb:Y UW1 Z
+uses	1	0	noun:Y UW1 S AH0 Z	verb:Y UW1 Z AH0 Z
+wind	0	0	noun:W IH1 N D	verb:W AY1 N D
+winds	0	0	noun:W IH1 N D Z	verb:W AY1 N D Z
+wound	0	0	other:W UW1 N D	verb:W AW1 N D
