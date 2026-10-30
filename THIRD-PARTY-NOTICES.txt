@@ -1,7 +1,8 @@
 Third-party notices
 
 Klattara includes the CMU Pronouncing Dictionary, compiled into the program,
-and a letter-to-sound model trained from it (src/data/lts/joint.bin).
+and a letter-to-sound model and a table of stress endings made from it
+(src/data/lts/joint.bin and stress_endings.tsv).
 The dictionary's license follows.
 
 Copyright (C) 1993-2015 Carnegie Mellon University. All rights reserved.

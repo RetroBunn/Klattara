@@ -1,0 +1,179 @@
+# Words added to the CMU Pronouncing Dictionary by hand, or corrected from it.
+# Written for Klattara from common American pronunciations, and under its MIT
+# license. An entry here replaces every pronunciation the dictionary has for
+# that word, its plural and its possessive.
+#
+# Each line is a word in lowercase, then its sounds in ARPAbet, as in CMUdict:
+# vowels end in 1 for the main stress, 2 for secondary stress and 0 for none,
+# and each word has one main stress. A second pronunciation would be written
+# word(2). Only add a word that the engine gets wrong. Plurals and possessives
+# follow by themselves, as "memes" does from "meme" and "Mozart's" from
+# "Mozart", but -ed and -ing forms may need their own lines.
+
+# Computers, phones and the internet
+airbnb EH1 R B IY2 EH2 N B IY0
+autocorrect AO1 T OW0 K ER0 EH2 K T
+backend B AE1 K EH2 N D
+captcha K AE1 P CH AH0
+chatbot CH AE1 T B AA2 T
+chatgpt CH AE2 T JH IY2 P IY2 T IY1
+codec K OW1 D EH2 K
+combobox K AA1 M B OW0 B AA2 K S
+cortana K AO0 R T AA1 N AH0
+crypto K R IH1 P T OW0
+cryptocurrency K R IH2 P T OW0 K ER1 AH0 N S IY0
+dogecoin D OW1 JH K OY2 N
+duckduckgo D AH2 K D AH2 K G OW1
+ebook IY1 B UH2 K
+email IY1 M EY2 L
+emailed IY1 M EY2 L D
+emailing IY1 M EY2 L IH0 NG
+emails IY1 M EY2 L Z
+ethereum IH0 TH IH1 R IY0 AH0 M
+filepath F AY1 L P AE2 TH
+firefox F AY1 ER0 F AA2 K S
+github G IH1 T HH AH2 B
+gitlab G IH1 T L AE2 B
+hotkey HH AA1 T K IY2
+ios AY2 OW2 EH1 S
+jpeg JH EY1 P EH2 G
+json JH EY1 S AH0 N
+kubernetes K UW2 B ER0 N EH1 T IY0 Z
+linkedin L IH2 NG K T IH1 N
+logitech L AA1 JH IH0 T EH2 K
+macos M AE1 K OW2 EH2 S
+meme M IY1 M
+metadata M EH1 T AH0 D EY2 T AH0
+mysql M AY2 EH2 S K Y UW2 EH1 L
+nginx EH1 N JH AH0 N EH2 K S
+openai OW2 P AH0 N EY2 AY1
+paypal P EY1 P AE2 L
+podcast P AA1 D K AE2 S T
+podcaster P AA1 D K AE2 S T ER0
+podcasting P AA1 D K AE2 S T IH0 NG
+postgres P OW1 S T G R EH2 S
+pytorch P AY1 T AO2 R CH
+regex R EH1 JH EH2 K S
+router R AW1 T ER0
+routers R AW1 T ER0 Z
+spacex S P EY1 S EH2 K S
+spotify S P AA1 T AH0 F AY2
+submenu S AH1 B M EH2 N Y UW0
+taskbar T AE1 S K B AA2 R
+tiktok T IH1 K T AA2 K
+ubuntu UW0 B UH1 N T UW0
+venmo V EH1 N M OW0
+webinar W EH1 B AH0 N AA2 R
+webpage W EH1 B P EY2 JH
+whatsapp W AH1 T S AE2 P
+wikipedia W IH2 K AH0 P IY1 D IY0 AH0
+wordpress W ER1 D P R EH2 S
+youtube Y UW1 T UW2 B
+youtuber Y UW1 T UW2 B ER0
+
+# Screen readers and speech
+dectalk D EH1 K T AO2 K
+espeak IY1 S P IY2 K
+klattara K L AE0 T AA1 R AH0
+nvda EH2 N V IY2 D IY2 EY1
+
+# Everyday words
+acai AA2 S AY0 IY1
+anime AE1 N AH0 M EY2
+chipotle CH AH0 P OW1 T L EY0
+cisgender S IH0 S JH EH1 N D ER0
+codename K OW1 D N EY2 M
+cosplay K AA1 Z P L EY2
+covid K OW1 V IH0 D
+edamame EH2 D AH0 M AA1 M EY0
+esports IY1 S P AO2 R T S
+gnocchi N Y OW1 K IY0
+jalapeno HH AA2 L AH0 P EY1 N Y OW0
+kawaii K AH0 W AY1 IY0
+kombucha K AA0 M B UW1 CH AH0
+manga M AA1 NG G AH0
+omicron AA1 M AH0 K R AA2 N
+pho F AH1
+postseason P OW1 S T S IY2 Z AH0 N
+quinoa K IY1 N W AA2
+relatable R IH0 L EY1 T AH0 B AH0 L
+remix R IY1 M IH2 K S
+sriracha S IH0 R AA1 CH AH0
+sudoku S UW0 D OW1 K UW0
+tiramisu T IH2 R AH0 M IY1 S UW0
+
+# Medicines
+adderall AE1 D ER0 AO2 L
+fentanyl F EH1 N T AH0 N IH2 L
+moderna M AH0 D ER1 N AH0
+naloxone N AH0 L AA1 K S OW2 N
+ozempic OW1 Z EH0 M P IH0 K
+zoloft Z OW1 L AO2 F T
+
+# Companies, brands and acronyms said as words
+asus EY1 S UW2 S
+doordash D AO1 R D AE2 SH
+huawei W AA1 W EY2
+hyundai HH AH1 N D EY2
+kia K IY1 AH0
+pokemon P OW1 K EY0 M AA2 N
+potus P OW1 T AH0 S
+scotus S K OW1 T AH0 S
+uber UW1 B ER0
+volkswagen V OW1 K S W AE2 G AH0 N
+xiaomi SH AW1 M IY0
+
+# People
+aiden EY1 D AH0 N
+aoife IY1 F AH0
+ariana AA2 R IY0 AA1 N AH0
+beyonce B IY0 AA1 N S EY2
+bezos B EY1 Z OW2 S
+buttigieg B UW1 T AH0 JH EH2 JH
+camus K AE0 M UW1
+caoimhe K IY1 V AH0
+chalamet SH AE1 L AH0 M EY2
+ciara S IY0 EH1 R AH0
+cillian K IH1 L IY0 AH0 N
+debussy D EH2 B Y UW0 S IY1
+dostoevsky D AA2 S T AH0 Y EH1 F S K IY0
+dvorak D V AO1 R ZH AA2 K
+elon IY1 L AA2 N
+eminem EH2 M AH0 N EH1 M
+erdogan EH1 R D OW0 AA2 N
+goethe G ER1 T AH0
+hermione HH ER0 M AY1 AH0 N IY0
+kamala K AA1 M AH0 L AH0
+kanye K AA1 N Y EY2
+kayleigh K EY1 L IY0
+macron M AE0 K R OW1 N
+merkel M EH1 R K AH0 L
+mozart M OW1 T S AA2 R T
+nevaeh N AH0 V EY1 AH0
+nguyen W IH1 N
+niamh N IY1 V
+nietzsche N IY1 CH AH0
+orban AO1 R B AA2 N
+pichai P IH0 CH AY1
+rihanna R IY0 AA1 N AH0
+saoirse S ER1 SH AH0
+siobhan SH IH0 V AO1 N
+sunak S UW1 N AE2 K
+sza S IH1 Z AH0
+tchaikovsky CH AY0 K AO1 F S K IY0
+zelenskyy Z EH0 L EH1 N S K IY0
+zendaya Z EH0 N D EY1 AH0
+
+# Places
+accra AH0 K R AA1
+bengaluru B EH2 NG G AH0 L UW1 R UW0
+bhutan B UW0 T AA1 N
+bournemouth B AO1 R N M AH0 TH
+donbas D AA1 N B AE2 S
+guangzhou G W AA1 NG JH OW2
+hanoi HH AE0 N OY1
+marseille M AA0 R S EY1
+phuket P UW2 K EH1 T
+reykjavik R EY1 K Y AH0 V IH2 K
+shenzhen SH EH1 N JH EH2 N
+wuhan W UW1 HH AA2 N

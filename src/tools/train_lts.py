@@ -16,9 +16,14 @@ chain of units that spells it.
 3. Pruning: long-context entries whose probability is close to what the
    shorter context already predicts are dropped, to keep the model small.
 
+It also writes a table of word endings that fix the main stress, such as
+-ation, since a model of the last few units can't see how far a stress is
+from the end of the word.
+
 Usage, from the project folder:
     .venv/Scripts/python src/tools/train_lts.py
-        trains the shipped model on every word: src/data/lts/joint.bin
+        trains the shipped model on every word: src/data/lts/joint.bin and
+        stress_endings.tsv
     .venv/Scripts/python src/tools/train_lts.py --evaluate
         trains on 90% of the words and writes target/lts-eval, for
         cargo run --release --example lts_eval -- target/lts-eval
@@ -39,6 +44,10 @@ EVALUATION = ROOT / "target" / "lts-eval"
 
 ORDER = int(os.environ.get("LTS_ORDER", 5))
 PRUNE = float(os.environ.get("LTS_PRUNE", 0.2))
+# A word ending goes in the stress table if at least this many words have it,
+# and this share of them stress the same syllable.
+ENDING_WORDS = 20
+ENDING_SHARE = 0.95
 
 # The phoneme codes used by the engine (src/engine/src/arpabet.rs).
 SYMBOLS = (
@@ -297,7 +306,32 @@ def write_model(path, ids, probs, gammas, keep, order):
     print(f"Wrote {path} ({len(out) / 1e6:.2f} MB, {entries} entries, order {order}, prune {PRUNE})")
 
 
+def stress_endings(words):
+    """Word endings of 3 to 6 letters that nearly always put the main stress
+    on the same syllable, counted from the end of the word: {ending: place}."""
+    counts = defaultdict(Counter)
+    for word, phones in words.items():
+        stresses = [p[-1] for p in phones if p[-1] in "012"]
+        if len(stresses) >= 2 and "1" in stresses:
+            place = len(stresses) - stresses.index("1")
+            for k in range(3, 7):
+                if len(word) > k:
+                    counts[word[-k:]][place] += 1
+    table = {}
+    for ending, places in counts.items():
+        place, most = places.most_common(1)[0]
+        total = sum(places.values())
+        if total >= ENDING_WORDS and most / total >= ENDING_SHARE:
+            table[ending] = place
+    return table
+
+
 def train(words, path):
+    table = stress_endings(words)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = "".join(f"{ending}\t{table[ending]}\n" for ending in sorted(table))
+    path.with_name("stress_endings.tsv").write_text(lines, encoding="utf-8", newline="\n")
+    print(f"  {len(table)} stress endings", flush=True)
     aligned = learn_alignments(words)
     ids, sequences = units(aligned)
     print(f"  {len(ids)} letter-phoneme units", flush=True)

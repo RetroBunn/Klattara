@@ -5,6 +5,7 @@ NVDA is 32-bit before 2026 and 64-bit from then on, so each DLL is tested on the
 NVDA that will load it: a 64-bit Python tests the 64-bit DLL on the clone of
 https://github.com/nvaccess/nvda in the nvda folder of the project, and a 32-bit
 Python tests the 32-bit DLL on NVDA 2025.1, in the nvda-release-2025.1 folder.
+If that folder isn't there, the 32-bit DLL is tested on the nvda folder instead.
 
 The driver runs on NVDA's real synthDriverHandler, driverHandler,
 autoSettingsUtils, speech.commands, extensionPoints and baseObject. Only what
@@ -30,16 +31,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 DRIVER = ROOT / "src" / "plat" / "nvda" / "addon" / "synthDrivers" / "klattara" / "__init__.py"
+NVDA_SOURCE = ROOT / "nvda" / "source"
 if ctypes.sizeof(ctypes.c_void_p) == 8:
     ARCHITECTURE = "x64"
-    NVDA_SOURCE = ROOT / "nvda" / "source"
-    NVDA_CLONE = "git clone --depth 1 https://github.com/nvaccess/nvda nvda"
     DLL = ROOT / "target" / "release" / "klattara.dll"
 else:
     ARCHITECTURE = "x86"
-    NVDA_SOURCE = ROOT / "nvda-release-2025.1" / "source"
-    NVDA_CLONE = "git clone --depth 1 --branch release-2025.1 https://github.com/nvaccess/nvda nvda-release-2025.1"
     DLL = ROOT / "target" / "i686-pc-windows-msvc" / "release" / "klattara.dll"
+    if (ROOT / "nvda-release-2025.1" / "source").is_dir():
+        NVDA_SOURCE = ROOT / "nvda-release-2025.1" / "source"
+    else:
+        print("warning: no nvda-release-2025.1 folder, so the 32-bit DLL is tested on current NVDA, not on 32-bit NVDA's code")
 
 events = []
 lock = threading.Lock()
@@ -103,7 +105,7 @@ class WavePlayer:
 def load_nvda():
     """Imports NVDA's real modules, with stand-ins for its runtime."""
     if not (NVDA_SOURCE / "synthDriverHandler.py").is_file():
-        raise SystemExit(f"NVDA's source is needed in {NVDA_SOURCE.parent}: {NVDA_CLONE}")
+        raise SystemExit(f"NVDA's source is needed in {NVDA_SOURCE.parent}: git clone https://github.com/nvaccess/nvda")
     sys.path.insert(0, str(NVDA_SOURCE))
     # NVDA installs these translation functions as builtins.
     builtins._ = lambda text: text

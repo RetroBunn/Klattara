@@ -1,5 +1,6 @@
-//! The pronunciation dictionary: CMUdict, compiled into the binary by
-//! build.rs and searched in place.
+//! The pronunciation dictionary: CMUdict and the words added to it by hand in
+//! src/data/extra_words.dict, compiled into the binary by build.rs and
+//! searched in place.
 //!
 //! CMUdict is Copyright (C) 1993-2015 Carnegie Mellon University, used under
 //! its BSD-style license (src/data/cmudict/LICENSE), which requires the
@@ -9,6 +10,7 @@ use crate::arpabet::STRESS_SHIFT;
 use crate::phoneme::{Phoneme, Stress};
 
 static DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/cmudict.bin"));
+static ADDED: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/extra_words.dict"));
 
 /// The engine's phoneme for each ARPAbet code, in [`crate::arpabet::SYMBOLS`] order.
 const PHONEMES: [Phoneme; 39] = {
@@ -82,6 +84,11 @@ pub fn lookup(word: &str) -> Option<Pronunciation> {
     Some(found)
 }
 
+/// Whether a word was added to the dictionary by hand.
+pub fn is_added(word: &str) -> bool {
+    ADDED.lines().filter(|line| !line.starts_with('#')).any(|line| line.split_whitespace().next() == Some(word))
+}
+
 /// The first index in 0..n for which `before` is false.
 fn partition_point(n: usize, before: impl Fn(usize) -> bool) -> usize {
     let (mut lo, mut hi) = (0, n);
@@ -103,6 +110,16 @@ mod tests {
         for (symbol, phoneme) in SYMBOLS.iter().zip(PHONEMES) {
             assert_eq!(Phoneme::parse(symbol).map(|p| p.0), Some(phoneme));
         }
+    }
+
+    #[test]
+    fn words_added_by_hand_replace_the_dictionary() {
+        // Not in CMUdict at all.
+        assert_eq!(lookup("meme").unwrap(), [(M, Stress::Unstressed), (IY, Stress::Primary), (M, Stress::Unstressed)]);
+        // In CMUdict, wrongly, as "you-ber"; its one entry is gone.
+        assert_eq!(variants("uber").len(), 1);
+        assert_eq!(lookup("uber").unwrap()[0], (UW, Stress::Primary));
+        assert!(is_added("uber") && !is_added("cat") && !is_added("#"));
     }
 
     #[test]

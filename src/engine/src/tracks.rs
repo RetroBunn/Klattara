@@ -55,6 +55,13 @@ const CREAK_LEAD: f64 = 90.0;
 const CREAK_SHARE: f64 = 0.7;
 const CREAK_AFTER: f64 = 0.5;
 const CREAK_FADE: f64 = 20.0;
+/// How far a dark L pulls /ɪ/ and /ɛ/ down and back: F1 rises by this many Hz
+/// and F2 shrinks to this share. With their usual targets, "fill" stood too
+/// close to "feel", and F2's plunge to the L blurred them both. Ten pairs like
+/// "seal" and "sill" scored +34 against +17 at 485 words per minute and +73
+/// against +42 at normal speed, recorded one at a time.
+const DARK_L_F1_RISE: f64 = 60.0;
+const DARK_L_F2_SHARE: f64 = 0.82;
 
 trait Interpolate: Copy {
     fn interpolate(&self, other: &Self, t: f64) -> Self;
@@ -153,6 +160,19 @@ fn targets(segments: &[Segment], i: usize) -> (Formants, Formants) {
     if front_velar(segments, i) {
         let front = Formants { freq: [spec.formants[0], FRONT_VELAR[0], FRONT_VELAR[1]], bw: spec.bandwidths };
         return (front, front);
+    }
+    let before_dark_l = segments.get(i + 1).is_some_and(|n| n.phoneme == Phoneme::LX);
+    if before_dark_l && matches!(seg.phoneme, Phoneme::IH | Phoneme::EH) {
+        let [f1, f2, f3] = spec.formants;
+        let backed = Formants { freq: [f1 + DARK_L_F1_RISE, f2 * DARK_L_F2_SHARE, f3], bw: spec.bandwidths };
+        return (backed, backed);
+    }
+    // Before a dark L, /u/ holds its back target instead of gliding to it, or
+    // "fool" starts too far forward. Nine pairs like "fool" and "full" scored
+    // +50 against +42 at 485 words per minute, and +79 against +75 at normal speed.
+    if before_dark_l && seg.phoneme == Phoneme::UW {
+        let held = Formants { freq: spec.glide_to.unwrap_or(spec.formants), bw: spec.bandwidths };
+        return (held, held);
     }
     let start = Formants { freq: spec.formants, bw: spec.bandwidths };
     let end = Formants { freq: spec.glide_to.unwrap_or(spec.formants), bw: spec.bandwidths };
@@ -679,6 +699,24 @@ mod tests {
         let mid = frame_at(&frames, schwa.start + 0.5 * schwa.duration);
         assert_eq!((mid.fnp, mid.fnz), (spec(Phoneme::N).sound.fnp, spec(Phoneme::N).sound.fnz));
         assert!(mid.af == 0.0 && mid.ah == 0.0);
+    }
+
+    #[test]
+    fn a_dark_l_pulls_the_vowel_before_it_back() {
+        let f2 = |input: &str, vowel: Phoneme| {
+            let (segs, frames) = plan(input);
+            let seg = segs.iter().find(|s| s.phoneme == vowel).unwrap();
+            formant_at(&frames, 1, seg.start + 0.3 * seg.duration)
+        };
+        // "fill" and "fell" stand farther back than "fit" and "fet".
+        assert!(f2("[F IH1 L].", Phoneme::IH) < f2("[F IH1 T].", Phoneme::IH) - 200.0);
+        assert!(f2("[F EH1 L].", Phoneme::EH) < f2("[F EH1 T].", Phoneme::EH) - 200.0);
+        // "feel" keeps its target, so the gap to "fill" widens.
+        assert!(f2("[F IY1 L].", Phoneme::IY) > f2("[F IH1 L].", Phoneme::IH) + 400.0);
+        // "fool" holds its back target; "food" glides to it.
+        assert!(f2("[F UW1 L].", Phoneme::UW) < f2("[F UW1 D].", Phoneme::UW) - 100.0);
+        // An L that starts a syllable changes nothing: "fillet" isn't dark.
+        assert_eq!(f2("[F IH1 L AH0 T].", Phoneme::IH), f2("[F IH1 R AH0 T].", Phoneme::IH));
     }
 
     #[test]

@@ -8,8 +8,8 @@ It ships as an add-on for the NVDA screen reader, and as a Windows library (klat
 
 - A cascade and parallel formant synthesizer after Klatt (1980), with the voicing source, spectral tilt and pitch flutter of Klatt and Klatt (1990), and creaky voice.
 - Intelligibility at fast rates comes first. Speech is compressed evenly, so every timing relation within and between sounds is kept, and pauses shrink faster than speech does.
-- Pronunciation from the CMU Pronouncing Dictionary, about 135,000 words. Words not in it go to a letter-to-sound model trained on the same dictionary.
-- Klatt's (1979) duration rules, a pitch contour for each phrase, and smooth formant movement between sounds. That includes flapped T and D ("butter"), syllabic L and N ("bottle", "button"), a glottal catch on T at the end of a syllable ("bat now", "button"), a soft R after vowels, and front K and G before front vowels ("key", "geese").
+- Pronunciation from the CMU Pronouncing Dictionary, about 135,000 words, with a hand-written list of common modern words and names that it lacks or gets wrong ("YouTube", "email", "Nietzsche"). Words in neither go to a letter-to-sound model trained on the same dictionary, helped by common endings and by compounds of known words.
+- Klatt's (1979) duration rules, a pitch contour for each phrase, and smooth formant movement between sounds. That includes flapped T and D ("butter"), syllabic L and N ("bottle", "button"), a glottal catch on T at the end of a syllable ("bat now", "button"), a soft R after vowels, vowels pulled back before a dark L ("fill", "bell", "fool"), and front K and G before front vowels ("key", "geese").
 - Text normalization for everyday reading:
   - Numbers, including ordinals, decimals, fractions and phone numbers.
   - Money in dollars, pounds, euros and yen, with scales ("$5M", "$10bn") and other countries' dollars ("US$", "A$").
@@ -108,13 +108,16 @@ The DLL is written to target/release/klattara.dll. For the 32-bit version, add R
 
 That DLL is written to target/i686-pc-windows-msvc/release/klattara.dll.
 
-To build the NVDA add-on, you also need the 32-bit target above, and both 64-bit and 32-bit Python with the py launcher. The build tests each DLL on the NVDA that loads it, using NVDA's own source code: the 64-bit one on current NVDA, and the 32-bit one on NVDA 2025.1. So clone both into the project folder first:
+To build the NVDA add-on, you also need the 32-bit target above, and both 64-bit and 32-bit Python with the py launcher. The build runs the driver's tests against NVDA's own source code, so clone NVDA into the project folder first:
 
     git clone --depth 1 https://github.com/nvaccess/nvda nvda
-    git clone --depth 1 --branch release-2025.1 https://github.com/nvaccess/nvda nvda-release-2025.1
     python src/plat/nvda/build.py
 
-That builds both DLLs, tests the driver on each, and writes dist/klattara-1.0.nvda-addon, which carries both.
+That builds both DLLs, tests the driver on each, and writes dist/klattara-1.0.nvda-addon, which carries both. To test the 32-bit DLL on the code of 32-bit NVDA rather than current NVDA, also clone its last release; the tests use it if it's there:
+
+    git clone --depth 1 --branch release-2025.1 https://github.com/nvaccess/nvda nvda-release-2025.1
+
+To correct a word's pronunciation, or add a word, edit src/data/extra_words.dict and rebuild. The notes at the top of that file explain the format.
 
 To try the voice without NVDA, the say example writes a WAV file and prints the pronunciation it used:
 
@@ -135,7 +138,7 @@ The tools in src/tools measure how clear the voice is, using a speech recognizer
 ## How it works
 
 1. Text is split into sentences and phrases. Numbers, dates, money, abbreviations and symbols are turned into words. With phrase prediction on, a long stretch without punctuation is also split, before words that start a new group, such as "and it", "which" or a preposition, into parts of similar length (Bachenko and Fitzpatrick 1990).
-2. Each word's pronunciation comes from the dictionary, a homograph rule, or the letter-to-sound model. Endings like -s and -ed are marked, since they change how the word is timed. Each word keeps a single main stress. A compound stresses its first part ("MIcrosoft"), and words like "nineteen" and "outside" follow the rhythm of the sentence ("she's nineTEEN", "NINEteen EIGHty").
+2. Each word's pronunciation comes from the dictionary or a homograph rule. A word the dictionary lacks is built from its stem if it has a common ending ("rebooted"), or else goes to the letter-to-sound model, whose main stress is checked against a table of word endings ("relegation"). If the model is unsure of a word, and it is made of two known words ("webcam"), it is said as those two words. Endings like -s and -ed are marked, since they change how the word is timed. Each word keeps a single main stress. A compound stresses its first part ("MIcrosoft"), and words like "nineteen" and "outside" follow the rhythm of the sentence ("she's nineTEEN", "NINEteen EIGHty").
 3. The sounds are grouped into syllables, and each takes the right variant for its position, such as an aspirated, a flapped or a glottalized T. Before a glottalized T, the voice turns creaky, lower and uneven, as most American speakers' voices do (Garellek and Seyfarth 2016).
 4. Klatt's duration rules set each sound's length from its stress, its place in the word and phrase, and its neighbors. The whole timeline is then compressed to the speaking rate.
 5. A pitch contour is laid over each phrase, with accents on stressed words and a rise or fall at the end that depends on the punctuation. Each accent is a little lower than the one before, but never less than half height, so long sentences don't flatten out. Following Bell Labs' accent rules (Hirschberg 1993), words that only link clauses, such as "which" in mid-sentence or "because", get no accent, and neither does a word mentioned before ("buy a DOG, but I'm allergic to dogs"), unless it is a name or a number. Questions that start with a question word, such as "What time is it?", fall like statements, as most do in American speech; other questions rise.
@@ -147,7 +150,7 @@ The tools in src/tools measure how clear the voice is, using a speech recognizer
 - src/engine: the speech engine, as a Rust library, with examples.
 - src/plat/windows: klattara.dll and its C header.
 - src/plat/nvda: the NVDA add-on, its build script and its tests.
-- src/data: the pronouncing dictionary, the letter-to-sound model and the homograph table.
+- src/data: the pronouncing dictionary, the hand-written additions to it, the letter-to-sound model and the homograph table.
 - src/tools: Python tools for measuring clarity and for rebuilding the data.
 - src/research: a list of the papers the engine is based on, with where to get each one. The papers themselves are not included.
 

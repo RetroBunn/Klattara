@@ -1,9 +1,10 @@
 //! Measures a letter-to-sound model on held-out dictionary words.
 //!
-//! Usage: cargo run --release --example lts_eval -- target/lts-eval
+//! Usage: cargo run --release --example lts_eval -- target/lts-eval [guesses.tsv]
 //!
 //! The folder holds model.bin and heldout.tsv, both written by
-//! `src/tools/train_lts.py --evaluate`.
+//! `src/tools/train_lts.py --evaluate`. With a second argument, each word's
+//! guess is written there, for looking at the errors.
 
 use klattara::{JointModel, Stress};
 
@@ -40,8 +41,10 @@ fn main() {
     let folder = std::env::args().nth(1).unwrap_or_else(|| "target/lts-eval".to_string());
     let folder = std::path::Path::new(&folder);
     let bytes = std::fs::read(folder.join("model.bin")).expect("model.bin");
-    let model = JointModel::parse(&bytes);
+    let endings = std::fs::read_to_string(folder.join("stress_endings.tsv")).unwrap_or_default();
+    let model = JointModel::parse(&bytes).with_stress_endings(&endings);
     let list = std::fs::read_to_string(folder.join("heldout.tsv")).expect("heldout.tsv");
+    let mut guesses = String::new();
     let started = std::time::Instant::now();
     let (mut words, mut exact, mut any, mut no_stress, mut right, mut total) = (0, 0, 0, 0, 0, 0);
     for line in list.lines() {
@@ -49,12 +52,16 @@ fn main() {
         let variants: Vec<Vec<String>> =
             listed.split(" | ").map(|v| v.split_whitespace().map(String::from).collect()).collect();
         let guess = arpabet(&model.predict(word).unwrap_or_default());
+        guesses.push_str(&format!("{word}\t{}\n", guess.join(" ")));
         words += 1;
         exact += usize::from(guess == variants[0]);
         any += usize::from(variants.contains(&guess));
         no_stress += usize::from(variants.iter().any(|v| strip(v) == strip(&guess)));
         right += variants[0].len().saturating_sub(edit_distance(&guess, &variants[0]));
         total += variants[0].len();
+    }
+    if let Some(path) = std::env::args().nth(2) {
+        std::fs::write(path, guesses).expect("guesses");
     }
     let percent = |n: usize, of: usize| 100.0 * n as f64 / of as f64;
     println!("{words} held-out words, {:.1} ms per word", started.elapsed().as_secs_f64() * 1000.0 / words as f64);

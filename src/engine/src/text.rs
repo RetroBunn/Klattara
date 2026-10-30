@@ -457,24 +457,21 @@ fn attach(mut stem: Pronunciation, ending: &str) -> Pronunciation {
     stem
 }
 
-/// Common suffixes on dictionary words: "klatts", "rebooted", "unzipping".
+/// Suffixes to take off a word that is not in the dictionary, longest first:
+/// "klatts", "rebooted", "fairytalelike". These are the ones that beat the
+/// letter-to-sound model on held-out dictionary words. The model did better
+/// on -ing, -er, -ly, -ment, -able, -ism and -ize, which are left to it.
 const SUFFIXES: &[(&str, &str)] = &[
+    ("hood", "HH UH2 D"),
+    ("like", "L AY2 K"),
+    ("ness", "N AH0 S"),
+    ("less", "L AH0 S"),
+    ("est", "AH0 S T"),
     ("'s", "s"),
     ("s'", "s"),
-    ("ings", "IH0 NG Z"),
-    ("ing", "IH0 NG"),
     ("ed", "ed"),
     ("es", "s"),
     ("s", "s"),
-    ("ers", "ER0 Z"),
-    ("er", "ER0"),
-    ("est", "AH0 S T"),
-    ("ly", "L IY0"),
-    ("ness", "N AH0 S"),
-    ("less", "L AH0 S"),
-    ("ful", "F AH0 L"),
-    ("ments", "M AH0 N T S"),
-    ("ment", "M AH0 N T"),
 ];
 
 fn with_suffix(word: &str) -> Option<Pronunciation> {
@@ -483,21 +480,98 @@ fn with_suffix(word: &str) -> Option<Pronunciation> {
         if stem.len() < 2 {
             continue;
         }
-        // The stem as written, with a dropped e restored ("making"), with a
-        // doubled consonant undone ("running"), or with y restored ("tries").
-        let mut candidates = vec![stem.to_string(), format!("{stem}e")];
+        // Before a suffix that starts with a vowel, one consonant after one
+        // vowel means a dropped e: without one the consonant would double,
+        // so "coded" is "code", not "cod" ("codded").
         let bytes = stem.as_bytes();
-        if bytes.len() >= 3 && bytes[bytes.len() - 1] == bytes[bytes.len() - 2] {
-            candidates.push(stem[..stem.len() - 1].to_string());
+        let n = bytes.len();
+        let dropped_e = suffix.starts_with(['e', 'i'])
+            && !b"aeiouwxy".contains(&bytes[n - 1])
+            && b"aeiouy".contains(&bytes[n - 2])
+            && (n < 3 || !b"aeiou".contains(&bytes[n - 3]));
+        let mut candidates = vec![stem.to_string(), format!("{stem}e")];
+        if dropped_e {
+            candidates.swap(0, 1);
+        }
+        // A doubled consonant undone ("zipped"), or y restored ("tried").
+        if n >= 3 && bytes[n - 1] == bytes[n - 2] {
+            candidates.push(stem[..n - 1].to_string());
         }
         if let Some(base) = stem.strip_suffix('i') {
             candidates.push(format!("{base}y"));
+        }
+        // -es follows only a hissing sound, an o or a y made i, or else it
+        // is the -s of a stem with an e: "memes" isn't "mem" and "-es".
+        if suffix == "es" {
+            candidates
+                .retain(|c| c.ends_with(['s', 'x', 'z', 'o', 'y', 'e']) || c.ends_with("ch") || c.ends_with("sh"));
         }
         if let Some(base) = candidates.iter().find_map(|c| lexicon::lookup(c)) {
             return Some(attach(base, ending));
         }
     }
     None
+}
+
+/// How many inflected or derived forms of a word the dictionary lists. Real
+/// words have them ("land", "lands", "landed"), and names rarely do ("caro").
+fn relatives(word: &str) -> usize {
+    let endings = ["s", "es", "ed", "d", "ing", "er", "ers", "ly", "y", "ful", "ness", "less"];
+    let mut forms = endings.map(|ending| format!("{word}{ending}")).to_vec();
+    if let Some(stem) = word.strip_suffix('e') {
+        forms.extend(["ing", "able", "ation"].map(|ending| format!("{stem}{ending}")));
+    }
+    if let [.., vowel, last] = word.as_bytes()
+        && b"aeiou".contains(vowel)
+        && !b"aeiouwxy".contains(last)
+    {
+        forms.extend(["ing", "ed", "er", "y"].map(|ending| format!("{word}{}{ending}", *last as char)));
+    }
+    forms.iter().filter(|form| lexicon::lookup(form).is_some()).count()
+}
+
+/// A word made of two real words, each of at least `shortest` letters and
+/// with at least `related` relatives in the dictionary, as the two words would
+/// be said, with the main stress on the first. If it can be split more than
+/// one way, the most even split is taken.
+fn compound(word: &str, shortest: usize, related: usize) -> Option<Pronunciation> {
+    let part = |text: &str| if relatives(text) >= related { lexicon::lookup(text) } else { None };
+    let mut best: Option<(usize, Pronunciation)> = None;
+    for k in shortest..=word.len().saturating_sub(shortest) {
+        let (first, second) = word.split_at(k);
+        let evenness = k.min(word.len() - k);
+        if best.as_ref().is_none_or(|(even, _)| evenness > *even)
+            && let (Some(mut sounds), Some(rest)) = (part(first), part(second))
+        {
+            sounds.extend(rest.into_iter().map(|(p, s)| (p, if s == Stress::Primary { Stress::Secondary } else { s })));
+            best = Some((evenness, sounds));
+        }
+    }
+    best.map(|(_, sounds)| sounds)
+}
+
+/// How unsure the letter-to-sound model must be, as its average log10
+/// probability per letter, before a word is tried as a compound: of parts of
+/// at least four letters with two relatives, or, when it is very unsure, of
+/// at least three letters with one.
+const UNSURE: f32 = -1.1;
+const VERY_UNSURE: f32 = -1.6;
+
+/// Sounds out a word the dictionary does not have. The model handles most
+/// compounds well, and splitting every word that could be one is much worse:
+/// "rather" isn't "rat" and "her", nor "legend" "leg" and "end". But where the
+/// model is unsure, the parts were right 60% of the time against its 44% on
+/// held-out dictionary words: "webcam", not "WEBcum".
+fn sound_out(word: &str) -> Option<Pronunciation> {
+    let (sounds, sureness) = lts::predict_scored(word)?;
+    let parts = if sureness < VERY_UNSURE {
+        compound(word, 3, 1)
+    } else if sureness < UNSURE {
+        compound(word, 4, 2)
+    } else {
+        None
+    };
+    Some(parts.unwrap_or(sounds))
 }
 
 /// Replaces accented Latin letters with plain ones, so that "café" and
@@ -575,10 +649,16 @@ fn pronounce(word: &str) -> Pronunciation {
         return attach(spell(&stem.to_lowercase()), "s");
     }
     // Short abbreviations that cannot be words, though the dictionary may
-    // list a name spelled the same ("NGO", "Ngo").
+    // list a name spelled the same ("NGO", "Ngo"). A word added by hand is
+    // there to be said as a word ("JSON").
     let vowel = |c: char| "aeiou".contains(c);
     let start: String = lower.chars().take(2).collect();
-    if capitals(word) && word.len() <= 4 && !start.chars().any(vowel) && !ONSETS.contains(&start.as_str()) {
+    if capitals(word)
+        && word.len() <= 4
+        && !start.chars().any(vowel)
+        && !ONSETS.contains(&start.as_str())
+        && !lexicon::is_added(&lower)
+    {
         return spell(&lower);
     }
     if let Some(mut found) = lexicon::lookup(&lower) {
@@ -596,7 +676,7 @@ fn pronounce(word: &str) -> Pronunciation {
     if all_capitals {
         return spell(&lower);
     }
-    american(&lower).or_else(|| with_suffix(&lower)).or_else(|| lts::predict(&lower)).unwrap_or_else(|| spell(&lower))
+    american(&lower).or_else(|| with_suffix(&lower)).or_else(|| sound_out(&lower)).unwrap_or_else(|| spell(&lower))
 }
 
 /// First parts that share the stress with the rest of the word, as in
@@ -1631,14 +1711,69 @@ mod tests {
     fn handles_suffixes_on_known_words() {
         // Possessives and inflections of dictionary words.
         let klatt = notation(&[Phrase {
-            words: vec![Word { phonemes: with_suffix("synthesizing").unwrap(), ending: false }],
+            words: vec![Word { phonemes: with_suffix("dogs").unwrap(), ending: false }],
             boundary: Boundary::Period,
         }]);
-        assert!(klatt.ends_with("IH0 NG]."), "{klatt}");
+        assert!(klatt.ends_with("G Z]."), "{klatt}");
         assert_eq!(attach(arpabet("K AE1 T"), "s"), arpabet("K AE1 T S"));
         assert_eq!(attach(arpabet("D AO1 G"), "s"), arpabet("D AO1 G Z"));
         assert_eq!(attach(arpabet("B AA1 K S"), "s"), arpabet("B AA1 K S IH0 Z"));
         assert_eq!(attach(arpabet("W AO1 N T"), "ed"), arpabet("W AO1 N T IH0 D"));
+    }
+
+    #[test]
+    fn words_added_by_hand_are_said_as_written_there() {
+        // Whatever the capitals, and with the usual endings.
+        assert_eq!(say("YouTube"), "[Y UW1 T UW2 B].");
+        assert_eq!(say("COVID"), "[K OW1 V IH0 D].");
+        assert_eq!(say("Klattara"), "[K L AE0 T AA1 R AH0].");
+        assert_eq!(say("chatbots"), "[CH AE1 T B AA2 T S].");
+        // The dictionary's own plural and possessive give way too.
+        assert_eq!(say("memes"), "[M IY1 M Z].");
+        assert_eq!(say("Mozart's"), "[M OW1 T S AA2 R T S].");
+        // A rule would spell these capitals, as it does "HTML".
+        assert_eq!(say("JSON"), "[JH EY1 S AH0 N].");
+        assert_eq!(say("JPEG"), "[JH EY1 P EH2 G].");
+        assert_ne!(say("HTML"), "[HH T M L].");
+    }
+
+    #[test]
+    fn suffixes_find_the_stem_with_its_silent_e() {
+        let suffixed = |word: &str| with_suffix(word).map(|sounds| sounds.iter().map(|&(p, _)| p).collect::<Vec<_>>());
+        let sounds = |text: &str| Some(arpabet(text).iter().map(|&(p, _)| p).collect::<Vec<_>>());
+        // Not "cod" and "fac", though the dictionary lists them.
+        assert_eq!(suffixed("coded"), sounds("K OW1 D IH0 D"));
+        assert_eq!(suffixed("rides"), sounds("R AY1 D Z"));
+        // A stem that really has no e, and a doubled consonant undone.
+        assert_eq!(suffixed("visited"), sounds("V IH1 Z IH0 T IH0 D"));
+        assert_eq!(suffixed("sunned"), sounds("S AH1 N D"));
+        // -es needs a hissing sound or a stem's own e, and y restored counts.
+        assert_eq!(suffixed("boxes"), sounds("B AA1 K S IH0 Z"));
+        assert_eq!(suffixed("tries"), sounds("T R AY1 Z"));
+        assert_eq!(suffixed("zzzzes"), None);
+        assert_ne!(suffixed("memes"), sounds("M EH1 M Z"));
+        // Left to the letter-to-sound model, which does better on these.
+        assert_eq!(suffixed("reading"), None);
+        assert_eq!(suffixed("writer"), None);
+    }
+
+    #[test]
+    fn compounds_only_where_the_model_is_unsure() {
+        let compound_sounds = |word: &str, shortest: usize, related: usize| {
+            let phrase =
+                |phonemes| Phrase { words: vec![Word { phonemes, ending: false }], boundary: Boundary::Period };
+            compound(word, shortest, related).map(|phonemes| notation(&[phrase(phonemes)]))
+        };
+        // The parts of a real compound, with the main stress on the first.
+        assert_eq!(compound_sounds("batgirl", 3, 1), Some("[B AE1 T G ER2 L].".to_string()));
+        assert_eq!(compound_sounds("bookstore", 4, 2), Some("[B UH1 K S T AO2 R].".to_string()));
+        // Name fragments are not parts, however well they spell the word.
+        assert_eq!(compound_sounds("carolina", 4, 2), None);
+        // "rather" could be "rat" and "her", but the model is sure of it.
+        let (_, sureness) = lts::predict_scored("rather").unwrap();
+        assert!(sureness > UNSURE, "{sureness}");
+        // Unsure of "webcam", and so it is said as its two words.
+        assert_eq!(say("webcam"), "[W EH1 B K AE2 M].");
     }
 
     #[test]
