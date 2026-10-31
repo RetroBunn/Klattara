@@ -1797,6 +1797,11 @@ mod tests {
     fn words_added_by_hand_are_said_as_written_there() {
         // Whatever the capitals, and with the usual endings.
         assert_eq!(say("YouTube"), "[Y UW1 T UW2 B].");
+        // "BRIT-nee", as most Americans say it. The dictionary's middle syllable
+        // turned the T into a flap: "BRID-uh-nee".
+        assert_eq!(say("Brittany"), "[B R IH1 T N IY0].");
+        assert_eq!(say("Brittany's"), "[B R IH1 T N IY0 Z].");
+        assert_eq!(say("Britney"), "[B R IH1 T N IY0].");
         assert_eq!(say("COVID"), "[K OW1 V IH0 D].");
         assert_eq!(say("Klattara"), "[K L AE0 T AA1 R AH0].");
         assert_eq!(say("chatbots"), "[CH AE1 T B AA2 T S].");

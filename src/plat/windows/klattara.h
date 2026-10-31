@@ -126,6 +126,9 @@ int KLATTARA_CALL klattara_set_phrase_prediction(KlattaraEngine *engine, int pre
  *     rc  richness, 0 to 100 percent, more is thinner and buzzier, less fuller
  *     sm  smoothness, 0 to 100 percent, more softens the voice but not consonants
  *     ge  gender: 0 or f for female, 1 or m for male
+ *     f4  F4, 2000 to 6000 Hz        b4  its bandwidth, 100 to 4000 Hz
+ *     f5  F5, 2500 to 6000 Hz        b5  its bandwidth, 100 to 4000 Hz
+ *     f6  F6, 3000 to 9000 Hz        b6  its bandwidth, 100 to 4000 Hz
  * Changing voice replaces all of these with that voice's own. These don't depend on
  * the voice:
  *   [:speed 400] or [:spd 400]  speed, 38 to 1796 words per minute on ordinary text

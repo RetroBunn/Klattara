@@ -108,7 +108,13 @@ const MOST_RICH_OPEN_QUOTIENT: f64 = 0.2;
 ///   frequencies, and consonants like /s/ stand out more against it.
 /// - `ge`: gender, which chooses the model of the vocal tract: 0 or f for female, and 1
 ///   or m for male. It changes nothing else, so the pitch stays as it was.
-static SETTINGS: [Setting; 8] = [
+/// - `f4`, `f5` and `f6`: F4 to F6, Hz: see [`Voice::upper_formants`]. DECtalk has f4 and
+///   f5, and their limits are from it, though its top value turns a formant off, and here
+///   it is only a high formant. `f6` is this engine's own, with limits chosen to match.
+///   Set close together, formants add up: F4 and F5 both at 2600 Hz are 5.7 dB louder, and
+///   1% of the samples reach the soft clipper. F4 and F5 at 3000 and 3400 add 0.3 dB.
+/// - `b4`, `b5` and `b6`: their bandwidths, Hz.
+static SETTINGS: [Setting; 14] = [
     Setting::number("pi", 40.0, 550.0, |voice, hz| voice.pitch = hz),
     Setting::number("in", 0.0, 250.0, |voice, percent| voice.inflection = percent / 100.0),
     Setting::number("hs", 64.0, 135.0, |voice, percent| voice.head_size = percent),
@@ -126,6 +132,12 @@ static SETTINGS: [Setting; 8] = [
         choices: &[("0", 0.0), ("f", 0.0), ("1", 1.0), ("m", 1.0)],
         apply: |voice, value| voice.gender = if value == 1.0 { Gender::Male } else { Gender::Female },
     },
+    Setting::number("f4", 2000.0, 6000.0, |voice, hz| voice.upper_formants[0] = Some(hz)),
+    Setting::number("f5", 2500.0, 6000.0, |voice, hz| voice.upper_formants[1] = Some(hz)),
+    Setting::number("f6", 3000.0, 9000.0, |voice, hz| voice.upper_formants[2] = Some(hz)),
+    Setting::number("b4", 100.0, 4000.0, |voice, hz| voice.upper_bandwidths[0] = Some(hz)),
+    Setting::number("b5", 100.0, 4000.0, |voice, hz| voice.upper_bandwidths[1] = Some(hz)),
+    Setting::number("b6", 100.0, 4000.0, |voice, hz| voice.upper_bandwidths[2] = Some(hz)),
 ];
 
 /// The commands that set one thing each, written `[:name value]`, with the values each
@@ -654,6 +666,40 @@ mod tests {
     }
 
     #[test]
+    fn upper_formants_are_set_and_stop_at_their_limits() {
+        let voice = after("[:cv f4 3600 f5 4200 f6 6000 b4 300 b5 400 b6 1500]");
+        assert_eq!(voice.upper_formants, [Some(3600.0), Some(4200.0), Some(6000.0)]);
+        assert_eq!(voice.upper_bandwidths, [Some(300.0), Some(400.0), Some(1500.0)]);
+        let low = after("[:cv f4 1 f5 1 f6 1 b4 1 b5 1 b6 1]");
+        assert_eq!(low.upper_formants, [Some(2000.0), Some(2500.0), Some(3000.0)]);
+        assert_eq!(low.upper_bandwidths, [Some(100.0); 3]);
+        let high = after("[:cv f4 99999 f5 99999 f6 99999 b4 99999 b5 99999 b6 99999]");
+        assert_eq!(high.upper_formants, [Some(6000.0), Some(6000.0), Some(9000.0)]);
+        assert_eq!(high.upper_bandwidths, [Some(4000.0); 3]);
+        // They start unset, so that the gender's model decides.
+        assert_eq!(Voice::default().upper_formants, [None; 3]);
+        assert_eq!(Voice::default().upper_bandwidths, [None; 3]);
+    }
+
+    #[test]
+    fn bad_upper_formants_say_so() {
+        for input in ["[:cv f4 high]", "[:cv b5 wide]"] {
+            assert_eq!(read(input, false), plain(Alert::Parameter.words()), "{input}");
+        }
+        assert_eq!(read("[:cv f4]", false), plain(Alert::Value.words()));
+        assert_eq!(read("[:cv f7 3000]", false), plain(Alert::Parameter.words()));
+        assert_eq!(after("[:cv f4 high]"), Voice::default());
+    }
+
+    #[test]
+    fn a_new_voice_or_a_reset_clears_the_upper_formants() {
+        assert_eq!(after("[:cv f4 3600 b5 400][:vs]"), Voice::default());
+        assert_eq!(after("[:cv f4 3600 b5 400][:reset]"), Voice::default());
+        // A change of gender keeps them.
+        assert_eq!(after("[:cv f4 3600][:cv ge f]").upper_formants[0], Some(3600.0));
+    }
+
+    #[test]
     fn a_new_voice_replaces_richness_smoothness_and_gender() {
         assert_eq!(after("[:cv rc 90 sm 90 ge f][:vs]"), Voice::default());
     }
@@ -677,9 +723,14 @@ mod tests {
             let voice = after(command);
             assert_eq!((voice.pitch, voice.gender), (210.0, crate::voicedefs::Gender::Female), "{command}");
         }
-        for command in ["[:vb][:vs]", "[:vb][:voice Steve]"] {
+        for command in ["[:vb][:vs]", "[:vb][:voice Steve]", "[:vg][:vs]", "[:vg][:voice steve]"] {
             assert_eq!(after(command), Voice::default(), "{command}");
         }
+        let gary = Voice::from(find_voice("Gary").unwrap());
+        for command in ["[:vg]", "[:VG]", "[:voice Gary]", "[:voice gary]"] {
+            assert_eq!(after(command), gary, "{command}");
+        }
+        assert_eq!(gary.upper_formants, [Some(3400.0), Some(3650.0), Some(5600.0)]);
     }
 
     #[test]

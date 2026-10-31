@@ -429,13 +429,19 @@ mod tests {
 
     #[test]
     fn lists_the_voices() {
-        assert_eq!(klattara_voice_count(), 2);
+        assert_eq!(klattara_voice_count(), 3);
         let name = |index| unsafe { CStr::from_ptr(klattara_voice_name(index)) }.to_str().unwrap();
-        assert_eq!((name(0), name(1)), ("Steve", "Brittany"));
-        assert_eq!((klattara_voice_pitch(0), klattara_voice_pitch(1)), (110.0, 210.0));
-        assert_eq!((klattara_voice_inflection(0), klattara_voice_inflection(1)), (1.0, 1.0));
-        assert_eq!((klattara_voice_gender(0), klattara_voice_gender(1)), (KLATTARA_MALE, KLATTARA_FEMALE));
-        for bad in [-1, 2] {
+        assert_eq!((name(0), name(1), name(2)), ("Steve", "Brittany", "Gary"));
+        assert_eq!((klattara_voice_pitch(0), klattara_voice_pitch(1), klattara_voice_pitch(2)), (110.0, 210.0, 78.0));
+        assert_eq!(
+            (klattara_voice_inflection(0), klattara_voice_inflection(1), klattara_voice_inflection(2)),
+            (1.0, 1.0, 0.85)
+        );
+        assert_eq!(
+            (klattara_voice_gender(0), klattara_voice_gender(1), klattara_voice_gender(2)),
+            (KLATTARA_MALE, KLATTARA_FEMALE, KLATTARA_MALE)
+        );
+        for bad in [-1, 3] {
             assert!(klattara_voice_name(bad).is_null());
             assert_eq!(klattara_voice_pitch(bad), 0.0);
             assert_eq!(klattara_voice_inflection(bad), -1.0);
@@ -457,6 +463,17 @@ mod tests {
             klattara_set_voice(engine, 0);
         });
         assert_eq!(steve, back);
+        let gary = spoken(|engine| unsafe {
+            assert_eq!(klattara_set_voice(engine, 2), KLATTARA_OK);
+        });
+        assert_ne!(steve, gary);
+        assert_eq!(steve.len(), gary.len());
+        // Nothing of Gary's stays behind, his upper formants among it.
+        let back = spoken(|engine| unsafe {
+            klattara_set_voice(engine, 2);
+            klattara_set_voice(engine, 0);
+        });
+        assert_eq!(steve, back);
         // Choosing a voice brings back its own pitch and inflection.
         let reset = spoken(|engine| unsafe {
             klattara_set_pitch(engine, 300.0);
@@ -466,7 +483,7 @@ mod tests {
         assert_eq!(steve, reset);
         unsafe {
             let engine = klattara_create(22050);
-            assert_eq!(klattara_set_voice(engine, 2), KLATTARA_INVALID);
+            assert_eq!(klattara_set_voice(engine, klattara_voice_count()), KLATTARA_INVALID);
             assert_eq!(klattara_set_voice(std::ptr::null_mut(), 0), KLATTARA_INVALID);
             klattara_destroy(engine);
         }

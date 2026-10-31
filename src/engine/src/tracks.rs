@@ -16,7 +16,7 @@
 
 use crate::frame::Frame;
 use crate::phoneme::{Manner, Phoneme, Stress};
-use crate::phonetics::{CODA_R, FRONT_VELAR, NASALIZED_ZERO, OR_NUCLEUS, SILENT, Sound, spec};
+use crate::phonetics::{CODA_R, DEFAULT_F6, FRONT_VELAR, NASALIZED_ZERO, OR_NUCLEUS, SILENT, Sound, spec};
 use crate::singing::{VIBRATO_FADE, is_note};
 use crate::speech::Voice;
 use crate::synth::Synth;
@@ -624,17 +624,17 @@ pub fn frames(segments: &[Segment], pitch: &[(f64, f64)], voice: &Voice) -> Vec<
                     f.freq[0] * head,
                     f.freq[1] * head,
                     f.freq[2] * head,
-                    defaults.freq[3] * upper * head,
-                    defaults.freq[4] * upper * head,
-                    s.f6 * upper * head,
+                    voice.upper_formants[0].unwrap_or(defaults.freq[3] * upper) * head,
+                    voice.upper_formants[1].unwrap_or(defaults.freq[4] * upper) * head,
+                    voice.upper_formants[2].map_or(s.f6 * upper, |hz| hz * s.f6 / DEFAULT_F6) * head,
                 ],
                 bw: [
                     f.bw[0] * widths * head,
                     f.bw[1] * widths * head,
                     f.bw[2] * widths * head,
-                    defaults.bw[3] * widths * head,
-                    defaults.bw[4] * widths * head,
-                    defaults.bw[5] * widths * head,
+                    voice.upper_bandwidths[0].unwrap_or(defaults.bw[3] * widths) * head,
+                    voice.upper_bandwidths[1].unwrap_or(defaults.bw[4] * widths) * head,
+                    voice.upper_bandwidths[2].unwrap_or(defaults.bw[5] * widths) * head,
                 ],
                 fnp: s.fnp * upper * head,
                 bnp: s.bnp * head,
@@ -829,6 +829,83 @@ mod tests {
         assign_durations(&mut segs, 1.0);
         let pitch = pitch_keyframes(&segs, 110.0, 1.0);
         frames(&segs, &pitch, &Voice { head_size, ..Voice::default() })
+    }
+
+    /// Plans with a voice as given.
+    fn with_voice(input: &str, voice: &Voice) -> (Vec<Segment>, Vec<(f64, Frame)>) {
+        let mut segs = segments(&parse(input).unwrap());
+        assign_durations(&mut segs, 1.0);
+        let pitch = pitch_keyframes(&segs, 110.0, 1.0);
+        let frames = frames(&segs, &pitch, voice);
+        (segs, frames)
+    }
+
+    fn upper_voice() -> Voice {
+        Voice {
+            upper_formants: [Some(3600.0), Some(4200.0), Some(6000.0)],
+            upper_bandwidths: [Some(300.0), Some(400.0), Some(1500.0)],
+            ..Voice::default()
+        }
+    }
+
+    #[test]
+    fn upper_formants_and_bandwidths_are_what_was_set() {
+        let (_, frames) = with_voice("[AA1 AA1].", &upper_voice());
+        for (_, f) in &frames {
+            assert_eq!((f.freq[3], f.freq[4], f.freq[5]), (3600.0, 4200.0, 6000.0));
+            assert_eq!((f.bw[3], f.bw[4], f.bw[5]), (300.0, 400.0, 1500.0));
+        }
+    }
+
+    #[test]
+    fn upper_formants_leave_everything_else_alone() {
+        let input = "[M AA1 S IY1 K AH0 N].";
+        let (_, normal) = with_voice(input, &Voice::default());
+        let (_, changed) = with_voice(input, &upper_voice());
+        assert_eq!(normal.len(), changed.len());
+        for ((t0, a), (t1, b)) in normal.iter().zip(&changed) {
+            assert_eq!(t0, t1);
+            assert_eq!(a.freq[..3], b.freq[..3]);
+            assert_eq!(a.bw[..3], b.bw[..3]);
+            assert_eq!((a.f0, a.av, a.af, a.ah, a.fnp, a.fnz), (b.f0, b.av, b.af, b.ah, b.fnp, b.fnz));
+        }
+    }
+
+    #[test]
+    fn a_set_formant_is_the_same_on_either_gender_model() {
+        let female = Voice {
+            gender: Gender::Female,
+            upper_formants: [Some(3600.0), None, None],
+            upper_bandwidths: [Some(300.0), None, None],
+            ..Voice::default()
+        };
+        let (_, frames) = with_voice("[AA1 AA1].", &female);
+        let f = frames[3].1;
+        assert_eq!((f.freq[3], f.bw[3]), (3600.0, 300.0));
+        // Those not set still come from the model.
+        assert!((f.freq[4] - 3750.0 * 1.17).abs() < 1e-9 && (f.bw[4] - 200.0 * 1.25).abs() < 1e-9);
+    }
+
+    #[test]
+    fn head_size_still_moves_a_set_formant() {
+        let voice = Voice { head_size: 125.0, ..upper_voice() };
+        let (_, frames) = with_voice("[AA1 AA1].", &voice);
+        let f = frames[3].1;
+        assert_eq!((f.freq[3], f.freq[4], f.freq[5]), (3600.0 * 0.8, 4200.0 * 0.8, 6000.0 * 0.8));
+        assert_eq!((f.bw[3], f.bw[4], f.bw[5]), (300.0 * 0.8, 400.0 * 0.8, 1500.0 * 0.8));
+    }
+
+    #[test]
+    fn sharp_sounds_keep_their_higher_f6_when_it_is_set() {
+        let voice = Voice { upper_formants: [None, None, Some(6000.0)], ..Voice::default() };
+        let f6_during_s = |voice: &Voice| {
+            let (segs, frames) = with_voice("[AA1 S AA1].", voice);
+            let s = segs.iter().find(|seg| seg.phoneme == Phoneme::S).unwrap();
+            frame_at(&frames, s.start + s.duration / 2.0).freq[5]
+        };
+        // /s/ raises F6 from 4900 to 5500, and by that share of any value set.
+        assert_eq!(f6_during_s(&Voice::default()), 5500.0);
+        assert!((f6_during_s(&voice) - 6000.0 * 5500.0 / 4900.0).abs() < 1e-9);
     }
 
     #[test]

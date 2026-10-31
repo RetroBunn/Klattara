@@ -20,7 +20,7 @@ It ships as an add-on for the NVDA screen reader, as a Windows library (klattara
   - Greek letters, web and email addresses ("Games.com", "name@example.com"), and British spellings.
 - Homographs are chosen by context: "lead" the metal or the verb, "read" in the present or the past, "Polish" or "polish".
 - Optional phrase prediction, as in Eloquence: long sentences without commas are broken into phrases, each with its own pitch contour.
-- Two voices: Steve, the default, and Brittany. Each voice has a gender, which chooses its model of the vocal tract. Brittany's vowels come from measurements of women's speech, not from raising Steve's pitch (Hillenbrand and others 1995). The voices are defined in src/engine/src/voicedefs.rs.
+- Three voices: Steve, the default, Brittany, and Gary, a deep, giant voice. Each voice has a gender, which chooses its model of the vocal tract. Brittany's vowels come from measurements of women's speech, not from raising Steve's pitch (Hillenbrand and others 1995). The voices are defined in src/engine/src/voicedefs.rs.
 - Phoneme input, as in DECtalk: a command in the text lets you write a word's sounds in ARPAbet in among ordinary words.
 - Singing, as in DECtalk: any sound can have a written length and pitch, with notes from C2 to C5 sung with vibrato, or a pitch in Hz with none.
 - Commands in the text, as in DECtalk, to change voice, to customize a voice's pitch, inflection, head size, roughness and breathiness, and to set the speed, volume and vibrato.
@@ -40,9 +40,9 @@ The add-on needs NVDA 2025.1 or later, on Windows 10 or later. It works in both 
 
 You find these in NVDA's Voice settings, opened with NVDA+Control+V.
 
-1. Voice: Steve, the default, or Brittany. Each voice's pitch and inflection are stored with it, so choosing a voice sets those two sliders to that voice's values. A change you make to them lasts until you choose another voice.
+1. Voice: Steve, the default, Brittany or Gary. Each voice's pitch and inflection are stored with it, so choosing a voice sets those two sliders to that voice's values. A change you make to them lasts until you choose another voice.
 2. Rate: 15 is the normal rate, about 190 words per minute. 41 or 42 is about 430 words per minute, the fastest rate where Klattara has tested clearest so far. The slider goes up to about 950 words per minute, so there is no separate rate boost.
-3. Pitch: 14 is Steve's own pitch, 110 Hz, and 33 is Brittany's, 210 Hz.
+3. Pitch: 14 is Steve's own pitch, 110 Hz, 33 is Brittany's, 210 Hz, and 7 is Gary's, 78 Hz.
 4. Inflection: 40, normal pitch movement, is the value of both voices. Set it to 0 for a monotone.
 5. Expand abbreviations: checked by default. When checked, "Dr." is read "doctor" and "Calif." is read "California". When unchecked, abbreviations are read as written: spelled out when they have no vowel, and sounded out when they do.
 6. Phrase prediction: unchecked by default, as most screen reader users prefer. When checked, a long sentence without commas is broken into phrases where a reader would break it, such as before "which" or "toward": the pitch falls a little and starts afresh, with no pause. It can make long sentences in documents easier to follow.
@@ -86,8 +86,8 @@ On 32-bit Windows, the functions and the audio callback use the C calling conven
 - `klattara_set_voice(engine, index)` changes to a voice: its gender, pitch, inflection and voice quality. Rate, volume and how text is read stay as they are.
 - `klattara_set_gender(engine, gender)` sets which model of the vocal tract the current voice uses, for making a voice of your own. Nothing else changes, so set the pitch as well.
 - `klattara_set_rate(engine, rate)` sets the speaking rate. 1.0 is normal and 2.0 twice as fast. The range is 0.25 to 8.
-- `klattara_set_pitch(engine, hz)` sets the base pitch, 40 to 550 Hz. Each voice has its own default, 110 for Steve and 210 for Brittany.
-- `klattara_set_inflection(engine, inflection)` sets the pitch movement, from 0 for a monotone through 1 for normal, up to 2.5. Each voice has its own default, 1 for both Steve and Brittany.
+- `klattara_set_pitch(engine, hz)` sets the base pitch, 40 to 550 Hz. Each voice has its own default, 110 for Steve, 210 for Brittany and 78 for Gary.
+- `klattara_set_inflection(engine, inflection)` sets the pitch movement, from 0 for a monotone through 1 for normal, up to 2.5. Each voice has its own default, 1 for both Steve and Brittany and 0.85 for Gary.
 - `klattara_set_volume(engine, volume)` sets the volume, from 0 for silence through 1 for normal, up to 2.
 - `klattara_set_abbreviations(engine, expand)` reads abbreviations in full when expand is nonzero, which is the default, or as written when it is zero.
 - `klattara_set_phrase_prediction(engine, predict)` breaks long stretches of text without punctuation into phrases when predict is nonzero. It is off by default.
@@ -136,17 +136,22 @@ To change voice, use the voice's first letter or its name:
 
 - `[:vs]` or `[:voice Steve]`
 - `[:vb]` or `[:voice Brittany]`
+- `[:vg]` or `[:voice Gary]`
 
 To customize the voice, use `[:cv]` with any of these settings, in any order, such as `[:cv pi 150 hs 110 br 40]`:
 
 1. `pi`, average pitch: 40 to 550 Hz.
 2. `in`, inflection: 0 to 250 percent of normal pitch movement, where 0 is a monotone and 100 is normal.
-3. `hs`, head size: 64 to 135 percent of normal, starting at 100. A larger head sounds lower and deeper, because its longer vocal tract lowers every resonance by the same share.
-4. `rg`, roughness: 0 to 100, starting at 0. It makes the voice uneven from one pulse to the next.
-5. `br`, breathiness: 0 to 72 dB, the level of breath noise through the voice. Steve starts at 0 and Brittany at 36.
-6. `rc`, richness: 0 to 100 percent. More weakens the lowest harmonics, which sounds thinner and buzzier, and less strengthens them, which sounds fuller and softer. Steve is at 50 and Brittany at about 36.
-7. `sm`, smoothness: 0 to 100 percent. More takes the edge off the voice by weakening its high frequencies. Only the voice softens, so at high settings consonants like S stand out more. Steve is at 0 and Brittany at 12.
+3. `hs`, head size: 64 to 135 percent of normal, starting at 100, or 120 for Gary. A larger head sounds lower and deeper, because its longer vocal tract lowers every resonance by the same share.
+4. `rg`, roughness: 0 to 100, starting at 0, or 8 for Gary. It makes the voice uneven from one pulse to the next.
+5. `br`, breathiness: 0 to 72 dB, the level of breath noise through the voice. Steve and Gary start at 0 and Brittany at 36.
+6. `rc`, richness: 0 to 100 percent. More weakens the lowest harmonics, which sounds thinner and buzzier, and less strengthens them, which sounds fuller and softer. Steve is at 50, Brittany at about 36 and Gary at about 43.
+7. `sm`, smoothness: 0 to 100 percent. More takes the edge off the voice by weakening its high frequencies. Only the voice softens, so at high settings consonants like S stand out more. Steve is at 0, Brittany at 12 and Gary at 8.
 8. `ge`, gender: 0 or f for female, and 1 or m for male. It chooses the model of the vocal tract and changes nothing else, so set the pitch as well.
+9. `f4`, `f5` and `f6`, the upper formants: F4 from 2000 to 6000 Hz, F5 from 2500 to 6000 Hz and F6 from 3000 to 9000 Hz. Steve has 3300, 3750 and 4900, Brittany about 3861, 4388 and 5733, and Gary 3400, 3650 and 5600 before his head size lowers them.
+10. `b4`, `b5` and `b6`, their bandwidths: 100 to 4000 Hz each, where wider is duller and narrower rings more. Steve has 250, 200 and 1000, Brittany about 313, 250 and 1250, and Gary 300, 300 and 1000.
+
+F1 to F3 change with every sound, so they have no settings. F4 to F6 stay put, which gives a voice much of its character. A value you set is that many Hz on either gender's model, and head size still moves it: `[:cv f4 4000 hs 125]` puts F4 at 3200. F6 is the value on most sounds, and the sharp sounds that raise it, such as S, rise by the same share, so `f6` also changes how sharp S sounds. Formants set close together add up and get louder: F4 and F5 both at 2600 Hz are nearly 6 dB louder and start to distort, and `volume` brings that back down.
 
 Three more commands don't depend on the voice, so a change of voice leaves them as they are, along with phoneme input and the vibrato settings below:
 

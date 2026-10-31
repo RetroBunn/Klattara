@@ -405,7 +405,7 @@ def test_design(pad):
         buffer = ctypes.create_unicode_buffer(64)
         user32.SendMessageW(pad.voice, CB_GETLBTEXT, i, ctypes.addressof(buffer))
         voices.append(buffer.value)
-    check(voices == ["Steve", "Brittany"], f"the voice box lists the voices: {voices}")
+    check(voices == ["Steve", "Brittany", "Gary"], f"the voice box lists the voices: {voices}")
     check(user32.SendMessageW(pad.rate, TBM_GETPOS, 0, 0) == 15, "Rate starts at normal, 15")
     check(user32.SendMessageW(pad.volume, TBM_GETPOS, 0, 0) == 100, "Volume starts at full, 100")
     for slider in (pad.rate, pad.volume):
@@ -423,7 +423,7 @@ def test_menus(pad):
     check(speech_items[:3] == ["&Play\tF5", "P&ause\tF6", "&Stop\tF7"], f"the Speech menu shows F5, F6 and F7: {speech_items[:3]}")
     check(speech_items[-1] == "&Voice", "and ends in a Voice submenu")
     voices = user32.GetSubMenu(pad.speech, user32.GetMenuItemCount(pad.speech) - 1)
-    check(menu_items(voices) == ["&Steve", "&Brittany"], f"which lists the voices: {menu_items(voices)}")
+    check(menu_items(voices) == ["&Steve", "&Brittany", "&Gary"], f"which lists the voices: {menu_items(voices)}")
     checked = lambda i: bool(user32.GetMenuState(voices, i, MF_BYPOSITION) & MF_CHECKED)
     check(checked(0) and not checked(1), "with Steve checked")
     # The menu and the box follow each other.
@@ -604,6 +604,9 @@ def test_export(pad, folder):
     pad.select_voice(1)
     exported = export(pad, folder / "brittany.wav")
     check(exported == say_wav(["--voice=Brittany", text], folder / "say_brittany.wav"), "the voice box chooses Brittany")
+    pad.select_voice(2)
+    exported = export(pad, folder / "gary.wav")
+    check(exported == say_wav(["--voice=Gary", text], folder / "say_gary.wav"), "and Gary")
     pad.select_voice(0)
 
     pad.set_slider(pad.rate, 41)
@@ -635,6 +638,9 @@ def test_export(pad, folder):
     pad.set_text("[:cv rc 80 sm 20 ge f]" + text)
     richer = say_wav(["[:cv rc 80 sm 20 ge f]" + text], folder / "say_richer.wav")
     check(export(pad, folder / "richer.wav") == richer, "richness, smoothness and gender reach the sound")
+    pad.set_text("[:cv f4 3800 f5 4600 f6 6200 b4 400 b5 500 b6 1500]" + text)
+    upper = say_wav(["[:cv f4 3800 f5 4600 f6 6200 b4 400 b5 500 b6 1500]" + text], folder / "say_upper.wav")
+    check(export(pad, folder / "upper.wav") == upper, "the upper formants reach the sound")
     pad.set_text("[:speed 500]" + text)
     check(len(export(pad, folder / "speed.wav")) < 0.6 * len((folder / "steve.wav").read_bytes()), "a [:speed] command speeds it up")
     pad.set_text("[:vb][:speed 500][:reset]" + text)

@@ -317,8 +317,8 @@ def main():
 
         # The voices, in the engine's order, with their names and language.
         voices = synth.availableVoices
-        check(list(voices) == ["steve", "brittany"], f"the voices are listed: {list(voices)}")
-        check([v.displayName for v in voices.values()] == ["Steve", "Brittany"], "the voices have their names")
+        check(list(voices) == ["steve", "brittany", "gary"], f"the voices are listed: {list(voices)}")
+        check([v.displayName for v in voices.values()] == ["Steve", "Brittany", "Gary"], "the voices have their names")
         check(synth.language == "en_US", f"the voices speak American English: {synth.language}")
 
         # Each voice's pitch and inflection are stored with it, and choosing a voice
@@ -372,6 +372,13 @@ def main():
         synth.inflection = 10
         synth.voice = "brittany"
         check((synth.pitch, synth.inflection) == (33, 40), f"so do Brittany's: {synth.pitch}, {synth.inflection}")
+        synth.voice = "gary"
+        check((synth.pitch, synth.inflection) == (7, 34), f"and Gary's: {synth.pitch}, {synth.inflection}")
+        pitches.clear()
+        chosen.clear()
+        speak_and_measure(synth, ["Hello, world.  "])
+        check(pitches == [78] and chosen == [2], f"Gary speaks at his own 78 Hz: {pitches}")
+        synth.voice = "brittany"
         synth.pitch = 50
         synth.voice = "brittany"
         check(synth.pitch == 33, f"also on choosing the voice already in use: {synth.pitch}")

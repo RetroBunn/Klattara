@@ -46,6 +46,10 @@ pub struct VoiceDef {
     pub head_size: f64,
     /// Roughness, as in [`crate::Voice::roughness`]. 0 is none.
     pub roughness: f64,
+    /// F4 to F6, as in [`crate::Voice::upper_formants`]. None uses the gender's model.
+    pub upper_formants: [Option<f64>; 3],
+    /// Their bandwidths, as in [`crate::Voice::upper_bandwidths`].
+    pub upper_bandwidths: [Option<f64>; 3],
     /// Slow pitch wobble, as in [`crate::VoiceSettings::flutter`].
     pub flutter: f64,
     /// Output gain, which brings the voice to the level of the others. 1 is none.
@@ -69,6 +73,8 @@ pub const VOICES: &[VoiceDef] = &[
         breathiness: 0.0,
         head_size: 100.0,
         roughness: 0.0,
+        upper_formants: [None; 3],
+        upper_bandwidths: [None; 3],
         flutter: 25.0,
         level: 1.0,
     },
@@ -85,9 +91,36 @@ pub const VOICES: &[VoiceDef] = &[
         breathiness: 36.0,
         head_size: 100.0,
         roughness: 0.0,
+        upper_formants: [None; 3],
+        upper_bandwidths: [None; 3],
         flutter: 25.0,
         // More pulses per second carry more power: 1.9 dB more than Steve.
         level: 0.8,
+    },
+    // A deep, giant voice, the same idea as DECtalk's Huge Harry, built its own way. Low
+    // pitch and a long vocal tract are what listeners take for a large speaker (Smith and
+    // Patterson 2005). Against Harry, he is lower (78 Hz to 89) with a longer tract (120%
+    // to 115%), and has a much longer open phase, so he is full where Harry is buzzy, with
+    // a little roughness where Harry has none. F4 and F5 lie close together, about 2830 and
+    // 3040 Hz once the head size has lowered them, and wide enough to overlap, which makes
+    // one broad resonance rather than two narrow ones. F6 is raised so that the head size
+    // doesn't dull S, which peaks at about 5240 Hz, close to Steve's 5500. All this is
+    // chosen for its character, and is for the ear to judge.
+    VoiceDef {
+        name: "Gary",
+        gender: Gender::Male,
+        pitch: 78.0,
+        inflection: 0.85,
+        open_quotient: 0.6,
+        tilt: 2.0,
+        breathiness: 0.0,
+        head_size: 120.0,
+        roughness: 8.0,
+        upper_formants: [Some(3400.0), Some(3650.0), Some(5600.0)],
+        upper_bandwidths: [Some(300.0), Some(300.0), None],
+        flutter: 25.0,
+        // Fewer pulses per second carry less power.
+        level: 1.08,
     },
 ];
 

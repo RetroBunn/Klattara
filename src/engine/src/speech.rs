@@ -39,6 +39,12 @@ pub struct Voice {
     /// Roughness, from 0 for none to 100 for the most: uneven pitch and strength from
     /// one pulse of the voice to the next.
     pub roughness: f64,
+    /// F4 to F6, Hz, where set. Those not set come from the gender's model. A value set
+    /// here is that many Hz on either model, and head size still moves it. F6 is the
+    /// value on most sounds: the sharp sounds that raise it rise by the same share.
+    pub upper_formants: [Option<f64>; 3],
+    /// The bandwidths of F4 to F6, Hz, where set, in the same way.
+    pub upper_bandwidths: [Option<f64>; 3],
     /// Slow pitch wobble, as in [`VoiceSettings::flutter`].
     pub flutter: f64,
     /// Output gain that brings the voice to the level of the others, as in
@@ -78,6 +84,8 @@ impl Default for Voice {
             breathiness: first.breathiness,
             head_size: first.head_size,
             roughness: first.roughness,
+            upper_formants: first.upper_formants,
+            upper_bandwidths: first.upper_bandwidths,
             flutter: first.flutter,
             level: first.level,
             volume: 1.0,
@@ -112,6 +120,8 @@ impl Voice {
         self.breathiness = def.breathiness;
         self.head_size = def.head_size;
         self.roughness = def.roughness;
+        self.upper_formants = def.upper_formants;
+        self.upper_bandwidths = def.upper_bandwidths;
         self.flutter = def.flutter;
         self.level = def.level;
     }
@@ -518,6 +528,22 @@ mod tests {
         // Gender is the same as the setting that it names.
         let female = Voice { gender: crate::Gender::Female, ..Voice::default() };
         assert_eq!(speak_text("[:cv ge f]Hello there.", &voice, 22050), speak_text("Hello there.", &female, 22050));
+    }
+
+    #[test]
+    fn upper_formants_reach_the_sound_and_leave_the_timing_alone() {
+        let voice = Voice::default();
+        let plain = speak_text("Hello there.", &voice, 22050);
+        for command in
+            ["[:cv f4 3800]", "[:cv f5 4500]", "[:cv f6 6000]", "[:cv b4 600]", "[:cv b5 600]", "[:cv b6 2000]"]
+        {
+            let changed = speak_text(&format!("{command}Hello there."), &voice, 22050);
+            assert_eq!(changed.len(), plain.len(), "{command}");
+            assert_ne!(changed, plain, "{command}");
+        }
+        // Setting Steve's own values changes nothing.
+        let own = "[:cv f4 3300 f5 3750 f6 4900 b4 250 b5 200 b6 1000]Hello there.";
+        assert_eq!(speak_text(own, &voice, 22050), plain);
     }
 
     #[test]
