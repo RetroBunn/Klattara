@@ -36,6 +36,7 @@ mod utterance;
 mod voicedefs;
 pub mod wav;
 
+pub use commands::follow_commands;
 pub use frame::{Frame, NUM_FORMANTS};
 #[doc(hidden)]
 pub use lts::JointModel;

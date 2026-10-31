@@ -257,7 +257,9 @@ pub unsafe extern "C" fn klattara_set_phrase_prediction(engine: *mut KlattaraEng
 /// While it is on, a bracket of valid ARPAbet is spoken as one word. A program
 /// that reads text it doesn't control should remove `[:` from it first.
 ///
-/// Phonetic input can be sung: see the notes in klattara.h.
+/// Phonetic input can be sung, and commands in text can change or customize the
+/// voice. A mistake in a command or a phoneme is spoken aloud, rather than returned as
+/// an error: see the notes in klattara.h. Only `KLATTARA_READ_PHONEMES` returns one.
 ///
 /// # Safety
 /// `engine` must be null or a live engine from [`klattara_create`], `input`
@@ -523,6 +525,65 @@ mod tests {
             klattara_destroy(engine);
             klattara_destroy(other);
         }
+    }
+
+    #[test]
+    fn commands_change_the_voice_on_the_engine() {
+        let speak = |engine: *mut KlattaraEngine, input: &CStr| {
+            let mut audio: Vec<i16> = Vec::new();
+            let user = (&mut audio as *mut Vec<i16>).cast::<c_void>();
+            assert_eq!(
+                unsafe { klattara_speak(engine, input.as_ptr(), KLATTARA_READ_TEXT, Some(collect), user) },
+                KLATTARA_OK
+            );
+            audio
+        };
+        let text = c"Hello, world.";
+        let brittany = spoken(|engine| unsafe {
+            klattara_set_voice(engine, 1);
+        });
+        let high = spoken(|engine| unsafe {
+            klattara_set_pitch(engine, 200.0);
+        });
+        let steve = spoken(|_| {});
+        let engine = klattara_create(22050);
+        assert!(speak(engine, c"[:vb]").is_empty());
+        assert_eq!(speak(engine, text), brittany);
+        assert!(speak(engine, c"[:voice Steve]").is_empty());
+        assert_eq!(speak(engine, text), steve);
+        assert!(speak(engine, c"[:cv pi 200]").is_empty());
+        assert_eq!(speak(engine, text), high);
+        // A change of voice replaces it, and a setter still works after it.
+        assert!(speak(engine, c"[:vs]").is_empty());
+        assert_eq!(speak(engine, text), steve);
+        unsafe {
+            klattara_set_pitch(engine, 200.0);
+        }
+        assert_eq!(speak(engine, text), high);
+        // Speed, volume and reset work on the engine too.
+        unsafe {
+            klattara_set_pitch(engine, 110.0);
+        }
+        assert!(speak(engine, c"[:speed 500]").is_empty());
+        assert!(speak(engine, text).len() < steve.len() * 3 / 4);
+        assert!(speak(engine, c"[:reset]").is_empty());
+        assert_eq!(speak(engine, text), steve);
+        // Mistakes are spoken, and aren't errors to the program.
+        let alert = speak(engine, c"Incorrect phoneme.");
+        assert!(speak(engine, c"[:phone klattara enable]").is_empty());
+        assert_eq!(speak(engine, c"[QQ]"), alert);
+        assert!(speak(engine, c"[:phone klattara disable]").is_empty());
+        assert!(!speak(engine, c"[:foo]").is_empty());
+        assert_eq!(speak(engine, text), steve);
+        // The other two readings don't take commands.
+        let mut audio: Vec<i16> = Vec::new();
+        let user = (&mut audio as *mut Vec<i16>).cast::<c_void>();
+        unsafe {
+            klattara_set_pitch(engine, 110.0);
+            klattara_speak(engine, c"[:vb]".as_ptr(), KLATTARA_READ_SPELLED, Some(collect), user);
+        }
+        assert_eq!(speak(engine, text), steve);
+        unsafe { klattara_destroy(engine) };
     }
 
     #[test]

@@ -8,7 +8,8 @@
 //! A phrase with a written pitch follows only its written pitches. It has no
 //! accents and no falling end, and a sound with no pitch of its own holds the one
 //! before it. Moving to a note takes [`NOTE_GLIDE_MS`], and moving to a pitch in Hz
-//! takes the whole of its sound. Written lengths stay exact at any speaking rate,
+//! takes the whole of its sound. `[:vibspeed]`, `[:vibdepth]` and `[:vibdelay]` change
+//! the vibrato. Written lengths stay exact at any speaking rate,
 //! so a song keeps its tempo. DECtalk's do too: from rate 90 to rate 600, Paul's
 //! 800 ms note stayed within 30 ms while a sentence went from 4168 ms to 679 ms.
 
@@ -21,12 +22,17 @@ const LONGEST_SOUND: u32 = 60_000;
 
 /// How long moving to a note takes, ms.
 pub const NOTE_GLIDE_MS: f64 = 100.0;
-/// Vibrato on notes: its rate, DECtalk's, and how far the pitch swings either way,
-/// in cents. DECtalk's swing is a fixed number of Hz, which is strong on low notes
-/// and faint on high ones: 54 cents at C2 and 7 at C5. This is the same interval
-/// on every note, about what DECtalk's comes to around C3.
-pub const VIBRATO_RATE: f64 = 6.2;
-pub const VIBRATO_CENTS: f64 = 25.0;
+/// Vibrato on notes, as it starts out: its speed in Hz, DECtalk's, and how far the pitch
+/// swings either way, in cents. DECtalk's swing is a fixed number of Hz, which is strong
+/// on low notes and faint on high ones: 54 cents at C2 and 7 at C5. This is the same
+/// interval on every note, about what DECtalk's comes to around C3. Its wave is a sine
+/// followed on every sample, where DECtalk's moves in 25 steps to the cycle.
+pub const VIBRATO_SPEED: f64 = 6.2;
+pub const VIBRATO_DEPTH: f64 = 25.0;
+/// How long a note holds still before its vibrato starts, as it starts out, ms.
+pub const VIBRATO_DELAY: f64 = 0.0;
+/// How long vibrato takes to fade in, ms, so that it never starts with a jolt.
+pub const VIBRATO_FADE: f64 = 120.0;
 /// The written symbol for a rest.
 pub const REST: &str = "_";
 

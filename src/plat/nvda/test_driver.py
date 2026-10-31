@@ -445,6 +445,9 @@ def main():
         for sequence in (
             ["[:phone klattara enable]  "],
             ["[:PHONE KLATTARA ENABLE]  "],
+            ["[:vb]  "],
+            ["[:voice Brittany]  "],
+            ["[:cv pi 300 hs 70]  "],
             ["Before [:phone klattara enable] after.  "],
             ["[:phone klattara ", "enable]  "],
             ["[", ":phone klattara enable]  "],

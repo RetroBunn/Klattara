@@ -9,6 +9,7 @@
 
 use crate::frame::{Frame, NUM_FORMANTS};
 use crate::resonator::{AntiResonator, Resonator};
+use crate::singing::VIBRATO_SPEED;
 use crate::source::{GlottalSource, Noise, TiltFilter};
 
 /// Settings that belong to the voice as a whole rather than to frames.
@@ -19,11 +20,15 @@ pub struct VoiceSettings {
     pub flutter: f64,
     /// Output gain; 1.0 is normal.
     pub volume: f64,
+    /// How uneven the voice is from one pulse to the next, 0 to 1.
+    pub roughness: f64,
+    /// How fast vibrato swings, Hz.
+    pub vibrato_speed: f64,
 }
 
 impl Default for VoiceSettings {
     fn default() -> Self {
-        VoiceSettings { flutter: 25.0, volume: 1.0 }
+        VoiceSettings { flutter: 25.0, volume: 1.0, roughness: 0.0, vibrato_speed: VIBRATO_SPEED }
     }
 }
 
@@ -133,6 +138,8 @@ impl Synth {
     pub fn set_settings(&mut self, settings: VoiceSettings) {
         self.settings = settings;
         self.source.set_flutter(settings.flutter);
+        self.source.set_roughness(settings.roughness);
+        self.source.set_vibrato_speed(settings.vibrato_speed);
     }
 
     /// Returns to silence and clears all internal state, so that rendering
@@ -238,7 +245,7 @@ mod tests {
     /// on multiples of 100 Hz.
     fn steady_vowel(f1: f64, f2: f64, f3: f64) -> Vec<f32> {
         let mut synth = Synth::new(SR);
-        synth.set_settings(VoiceSettings { flutter: 0.0, volume: 1.0 });
+        synth.set_settings(VoiceSettings { flutter: 0.0, ..VoiceSettings::default() });
         let mut frame = Frame { f0: 100.0, av: 60.0, oq: 0.5, ..Frame::default() };
         frame.freq[..3].copy_from_slice(&[f1, f2, f3]);
         frame.bw[..3].copy_from_slice(&[70.0, 100.0, 150.0]);

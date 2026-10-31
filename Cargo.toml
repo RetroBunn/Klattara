@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["src/engine", "src/plat/windows"]
+members = ["src/engine", "src/plat/klattpad", "src/plat/windows"]
 
 [profile.release]
 lto = true

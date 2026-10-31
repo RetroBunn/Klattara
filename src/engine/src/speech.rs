@@ -1,9 +1,10 @@
 //! Speech from text or phonetic input: the pipeline to audio.
 
-use crate::commands;
+use crate::commands::{self, Part};
 use crate::frame::Frame;
 use crate::intonation::pitch_keyframes;
 use crate::phoneme::Phoneme;
+use crate::singing::{VIBRATO_DELAY, VIBRATO_DEPTH, VIBRATO_SPEED};
 use crate::synth::{Synth, VoiceSettings};
 use crate::text;
 use crate::timing::assign_durations;
@@ -30,6 +31,14 @@ pub struct Voice {
     pub tilt: f64,
     /// Breath noise heard through voicing, as in [`VoiceDef::breathiness`].
     pub breathiness: f64,
+    /// Head size, as a percentage of normal. A larger head has a longer vocal tract,
+    /// so every resonance is lower by the same share: at 125, all of them are at 80%
+    /// of where they were. Their bandwidths move with them, which keeps the shape of
+    /// the spectrum the same.
+    pub head_size: f64,
+    /// Roughness, from 0 for none to 100 for the most: uneven pitch and strength from
+    /// one pulse of the voice to the next.
+    pub roughness: f64,
     /// Slow pitch wobble, as in [`VoiceSettings::flutter`].
     pub flutter: f64,
     /// Output gain that brings the voice to the level of the others, as in
@@ -44,6 +53,12 @@ pub struct Voice {
     /// Eloquence's phrase prediction. Off by default, as screen readers
     /// usually have it.
     pub phrase_prediction: bool,
+    /// How fast notes' vibrato swings, Hz.
+    pub vibrato_speed: f64,
+    /// How far notes' vibrato swings the pitch either way, in cents.
+    pub vibrato_depth: f64,
+    /// How long a note holds still before its vibrato starts, ms.
+    pub vibrato_delay: f64,
     /// Whether a bracket of valid ARPAbet in text is spoken as a word. Off by
     /// default, and set by commands in the text: see [`crate::commands`].
     pub phoneme_input: bool,
@@ -61,11 +76,16 @@ impl Default for Voice {
             open_quotient: first.open_quotient,
             tilt: first.tilt,
             breathiness: first.breathiness,
+            head_size: first.head_size,
+            roughness: first.roughness,
             flutter: first.flutter,
             level: first.level,
             volume: 1.0,
             expand_abbreviations: true,
             phrase_prediction: false,
+            vibrato_speed: VIBRATO_SPEED,
+            vibrato_depth: VIBRATO_DEPTH,
+            vibrato_delay: VIBRATO_DELAY,
             phoneme_input: false,
         }
     }
@@ -90,6 +110,8 @@ impl Voice {
         self.open_quotient = def.open_quotient;
         self.tilt = def.tilt;
         self.breathiness = def.breathiness;
+        self.head_size = def.head_size;
+        self.roughness = def.roughness;
         self.flutter = def.flutter;
         self.level = def.level;
     }
@@ -134,7 +156,43 @@ fn timeline(phrases: &[Phrase], rate: f64) -> (Vec<Segment>, f64) {
 /// the pitch from sounding mechanical, follows inflection up to normal: with
 /// inflection 0 the voice is a true monotone.
 fn synth_settings(voice: &Voice) -> VoiceSettings {
-    VoiceSettings { flutter: voice.flutter * voice.inflection.clamp(0.0, 1.0), volume: voice.volume * voice.level }
+    VoiceSettings {
+        flutter: voice.flutter * voice.inflection.clamp(0.0, 1.0),
+        volume: voice.volume * voice.level,
+        roughness: voice.roughness / 100.0,
+        vibrato_speed: voice.vibrato_speed,
+    }
+}
+
+/// Words per minute on ordinary text at each rate, measured on a paragraph of sentences
+/// of mixed lengths. Speech isn't quite in proportion to the rate, since pauses shrink
+/// faster than words do: rate 3 is 634 words per minute, not 3 times 190. Short sentences
+/// run slower than this, and long ones with few pauses faster.
+const WORDS_PER_MINUTE: [(f64, f64); 11] = [
+    (38.0, 0.25),
+    (87.0, 0.5),
+    (138.0, 0.75),
+    (190.0, 1.0),
+    (298.0, 1.5),
+    (409.0, 2.0),
+    (634.0, 3.0),
+    (863.0, 4.0),
+    (1094.0, 5.0),
+    (1326.0, 6.0),
+    (1796.0, 8.0),
+];
+
+/// The slowest and fastest speeds, in words per minute: the engine's slowest and fastest
+/// rates.
+pub const SLOWEST_WPM: f64 = WORDS_PER_MINUTE[0].0;
+pub const FASTEST_WPM: f64 = WORDS_PER_MINUTE[WORDS_PER_MINUTE.len() - 1].0;
+
+/// The rate that speaks at about this many words per minute.
+pub fn rate_for_words_per_minute(wpm: f64) -> f64 {
+    let wpm = wpm.clamp(SLOWEST_WPM, FASTEST_WPM);
+    let after = WORDS_PER_MINUTE.partition_point(|point| point.0 < wpm).clamp(1, WORDS_PER_MINUTE.len() - 1);
+    let ((slow, slow_rate), (fast, fast_rate)) = (WORDS_PER_MINUTE[after - 1], WORDS_PER_MINUTE[after]);
+    slow_rate + (fast_rate - slow_rate) * (wpm - slow) / (fast - slow)
 }
 
 /// Text longer than this many bytes is read piece by piece.
@@ -245,12 +303,18 @@ pub fn speak_phonemes(input: &str, voice: &Voice, sample_rate: u32) -> Result<Ve
 /// Plans ordinary text: synthesizer frames with their times in ms. A command in
 /// the text applies to the rest of it, and not beyond.
 pub fn text_frames(input: &str, voice: &Voice) -> Vec<(f64, Frame)> {
-    plan(&commands::phrases(input, &mut voice.clone()), voice)
+    let mut frames: Vec<(f64, Frame)> = Vec::new();
+    for part in commands::parts(input, &mut voice.clone()) {
+        let offset = frames.last().map_or(0.0, |last| last.0);
+        frames.extend(plan(&part.phrases, &part.voice).into_iter().map(|(t, frame)| (t + offset, frame)));
+    }
+    frames
 }
 
 /// Speaks ordinary text, returning samples between −1 and 1.
 pub fn speak_text(input: &str, voice: &Voice, sample_rate: u32) -> Vec<f32> {
-    render(&text_frames(input, voice), voice, sample_rate)
+    let parts = commands::parts(input, &mut voice.clone());
+    parts.iter().flat_map(|part| render(&plan(&part.phrases, &part.voice), &part.voice, sample_rate)).collect()
 }
 
 /// How input is read.
@@ -276,19 +340,21 @@ pub fn speak_with(
     on_audio: &mut dyn FnMut(&[f32]) -> bool,
 ) -> Result<bool, ParseError> {
     let mut synth = Synth::new(sample_rate);
-    synth.set_settings(synth_settings(voice));
     // Phonetic input can't be cut anywhere: its words are in brackets.
-    let parts = if reading == Reading::Phonemes { vec![input] } else { pieces(input) };
-    for part in parts {
-        let phrases = match reading {
-            Reading::Text => commands::phrases(part, voice),
-            Reading::Spelled => text::spelled_phrases(part),
-            Reading::Phonemes => parse(part)?,
+    let pieces = if reading == Reading::Phonemes { vec![input] } else { pieces(input) };
+    for piece in pieces {
+        let parts = match reading {
+            Reading::Text => commands::parts(piece, voice),
+            Reading::Spelled => vec![Part { voice: *voice, phrases: text::spelled_phrases(piece) }],
+            Reading::Phonemes => vec![Part { voice: *voice, phrases: parse(piece)? }],
         };
-        // Text with no words in it, such as a command alone, makes no sound.
-        for batch in batches(phrases).into_iter().filter(|batch| !batch.is_empty()) {
-            if !tracks::render_with(&mut synth, &plan(&batch, voice), on_audio) {
-                return Ok(false);
+        for part in parts {
+            synth.set_settings(synth_settings(&part.voice));
+            // Text with no words in it, such as a command alone, makes no sound.
+            for batch in batches(part.phrases).into_iter().filter(|batch| !batch.is_empty()) {
+                if !tracks::render_with(&mut synth, &plan(&batch, &part.voice), on_audio) {
+                    return Ok(false);
+                }
             }
         }
     }
@@ -358,6 +424,196 @@ mod tests {
         let begin = frames.iter().find(|(_, f)| f.steady == 1.0).unwrap().0;
         assert_eq!(f0_at(begin + 499.0), 130.81);
         assert_eq!(f0_at(begin + 600.0), 261.63);
+    }
+
+    #[test]
+    fn speed_commands_speak_at_about_the_speed_asked_for() {
+        let paragraph = "The old mill stood at the edge of the river. Nobody had worked there for years, and \
+            the roof had begun to fall in. We walked around it twice. Was anyone still living nearby? We could not \
+            tell. In the end we went home, tired and hungry. The next day it rained; we stayed inside and read.";
+        let words = paragraph.split_whitespace().count() as f64;
+        for wpm in [50.0, 100.0, 190.0, 250.0, 350.0, 450.0, 600.0, 800.0, 1000.0, 1500.0] {
+            let frames = text_frames(&format!("[:speed {wpm}]{paragraph}"), &Voice::default());
+            let measured = words / frames.last().unwrap().0 * 60_000.0;
+            assert!((measured / wpm - 1.0).abs() < 0.05, "asked for {wpm}, got {measured:.0}");
+        }
+    }
+
+    #[test]
+    fn the_normal_speed_is_the_normal_rate() {
+        assert_eq!(rate_for_words_per_minute(190.0), 1.0);
+        assert_eq!(rate_for_words_per_minute(SLOWEST_WPM), 0.25);
+        assert_eq!(rate_for_words_per_minute(FASTEST_WPM), 8.0);
+        assert_eq!(rate_for_words_per_minute(1.0), 0.25);
+        assert_eq!(rate_for_words_per_minute(9999.0), 8.0);
+        let rates: Vec<f64> = (40..1800).step_by(10).map(|wpm| rate_for_words_per_minute(f64::from(wpm))).collect();
+        assert!(rates.windows(2).all(|pair| pair[1] > pair[0]));
+    }
+
+    #[test]
+    fn volume_commands_scale_the_sound() {
+        let loudest = |audio: Vec<f32>| audio.iter().fold(0.0f32, |high, x| high.max(x.abs()));
+        let full = loudest(speak_text("Hello.", &Voice::default(), 22050));
+        let half = loudest(speak_text("[:volume 50]Hello.", &Voice::default(), 22050));
+        assert!((half / full - 0.5).abs() < 0.01, "{half} {full}");
+        assert_eq!(loudest(speak_text("[:volume 0]Hello.", &Voice::default(), 22050)), 0.0);
+        assert_eq!(
+            speak_text("[:volume 100]Hello.", &Voice::default(), 22050),
+            speak_text("Hello.", &Voice::default(), 22050)
+        );
+    }
+
+    #[test]
+    fn reset_returns_everything_to_the_start() {
+        let plain = speak_text("Hello.", &Voice::default(), 22050);
+        let changed = "[:vb][:cv pi 300 in 200 hs 70 rg 80 br 60][:speed 500][:volume 40][:vibspeed 9]";
+        let text = format!("{changed}[:phone klattara enable][:reset]Hello.");
+        assert_eq!(speak_text(&text, &Voice::default(), 22050), plain);
+        // And it lasts, as other commands do.
+        let mut voice = Voice { rate: 2.0, ..Voice::default() };
+        samples(&format!("{changed}[:reset]"), &mut voice);
+        assert_eq!(voice, Voice::default());
+    }
+
+    #[test]
+    fn a_new_voice_keeps_the_speed_volume_and_vibrato() {
+        let mut voice = Voice::default();
+        samples("[:speed 400][:volume 50][:vibdepth 40][:vibspeed 5][:vibdelay 200][:vb]", &mut voice);
+        assert_eq!(voice.pitch, 210.0);
+        assert_eq!(
+            (voice.volume, voice.vibrato_depth, voice.vibrato_speed, voice.vibrato_delay),
+            (0.5, 40.0, 5.0, 200.0)
+        );
+        assert_eq!(voice.rate, rate_for_words_per_minute(400.0));
+    }
+
+    #[test]
+    fn vibrato_commands_change_the_singing_only() {
+        let speech = "Hello there.";
+        assert_eq!(
+            speak_text(&format!("[:vibdepth 90][:vibspeed 9][:vibdelay 50]{speech}"), &Voice::default(), 22050),
+            speak_text(speech, &Voice::default(), 22050)
+        );
+        let on = "[:phone klattara enable]";
+        let song = "[AA1<800,20>].";
+        let plain = speak_text(&format!("{on}{song}"), &Voice::default(), 22050);
+        for command in ["[:vibdepth 90]", "[:vibspeed 9]", "[:vibdelay 300]"] {
+            assert_ne!(speak_text(&format!("{on}{command}{song}"), &Voice::default(), 22050), plain, "{command}");
+        }
+    }
+
+    #[test]
+    fn richness_smoothness_and_gender_reach_the_sound() {
+        let voice = Voice::default();
+        let plain = speak_text("Hello there.", &voice, 22050);
+        for command in ["[:cv rc 90]", "[:cv sm 60]", "[:cv ge f]"] {
+            let changed = speak_text(&format!("{command}Hello there."), &voice, 22050);
+            assert_eq!(changed.len(), plain.len(), "{command}");
+            assert_ne!(changed, plain, "{command}");
+        }
+        // Each value of Steve's own changes nothing.
+        for command in ["[:cv sm 0]", "[:cv ge m]", "[:cv ge 1]"] {
+            assert_eq!(speak_text(&format!("{command}Hello there."), &voice, 22050), plain, "{command}");
+        }
+        // Gender is the same as the setting that it names.
+        let female = Voice { gender: crate::Gender::Female, ..Voice::default() };
+        assert_eq!(speak_text("[:cv ge f]Hello there.", &voice, 22050), speak_text("Hello there.", &female, 22050));
+    }
+
+    #[test]
+    fn mistakes_are_spoken_and_the_text_goes_on() {
+        let voice = Voice::default();
+        let alert = speak_text("Incorrect command.", &voice, 22050);
+        assert_eq!(speak_text("[:foo]", &voice, 22050), alert);
+        // Streaming speaks it too, and it isn't an error to the program.
+        let mut streamed = Voice::default();
+        assert_eq!(samples("[:foo]", &mut streamed), alert);
+        assert!(samples("Before [:foo] after.", &mut streamed).len() > alert.len());
+    }
+
+    #[test]
+    fn phonetic_reading_still_reports_a_bad_phoneme_as_an_error() {
+        let mut voice = Voice::default();
+        assert!(speak_with("[QQ]", Reading::Phonemes, &mut voice, 22050, &mut |_| true).is_err());
+    }
+
+    #[test]
+    fn voice_commands_last_between_calls() {
+        let brittany = Voice::from(crate::find_voice("Brittany").unwrap());
+        let as_brittany = speak_text("Hello.", &brittany, 22050);
+        let mut voice = Voice::default();
+        assert!(samples("[:vb]", &mut voice).is_empty());
+        assert_eq!(samples("Hello.", &mut voice), as_brittany);
+        assert_eq!(samples("Hello.", &mut voice), as_brittany);
+        samples("[:vs]", &mut voice);
+        assert_eq!(samples("Hello.", &mut voice), speak_text("Hello.", &Voice::default(), 22050));
+    }
+
+    #[test]
+    fn a_command_in_a_single_utterance_changes_only_that_utterance() {
+        let voice = Voice::default();
+        let brittany = Voice::from(crate::find_voice("Brittany").unwrap());
+        assert_eq!(speak_text("[:vb]Hello.", &voice, 22050), speak_text("Hello.", &brittany, 22050));
+        assert_eq!(voice, Voice::default());
+    }
+
+    #[test]
+    fn each_part_is_spoken_by_its_own_voice() {
+        let voice = Voice::default();
+        let brittany = Voice::from(crate::find_voice("Brittany").unwrap());
+        let one = speak_text("One.", &voice, 22050);
+        let two = speak_text("Two.", &brittany, 22050);
+        let both = speak_text("One. [:vb] Two.", &voice, 22050);
+        assert_eq!(both, [one.clone(), two.clone()].concat());
+        // Streaming speaks the same, and Brittany's quieter level is hers alone.
+        let mut streamed = Voice::default();
+        assert_eq!(samples("One. [:vb] Two.", &mut streamed), both);
+    }
+
+    #[test]
+    fn frames_follow_each_part_in_order() {
+        let frames = text_frames("One. [:cv pi 300] Two.", &Voice::default());
+        assert!(frames.windows(2).all(|w| w[1].0 >= w[0].0));
+        let highest = |range: &[(f64, Frame)]| range.iter().fold(0.0f64, |high, (_, f)| high.max(f.f0));
+        let middle = frames.len() / 2;
+        assert!(highest(&frames[..middle]) < 200.0 && highest(&frames[middle..]) > 250.0);
+    }
+
+    #[test]
+    fn cv_pitch_and_inflection_reach_the_contour() {
+        let f0_range = |input: &str| {
+            let frames = text_frames(input, &Voice::default());
+            let voiced: Vec<f64> = frames.iter().filter(|(_, f)| f.f0 > 0.0).map(|(_, f)| f.f0).collect();
+            let (low, high) = voiced.iter().fold((f64::MAX, 0.0f64), |(l, h), x| (l.min(*x), h.max(*x)));
+            (low, high)
+        };
+        let text = "We walked along the river at night.";
+        let (normal_low, normal_high) = f0_range(text);
+        let (low, high) = f0_range(&format!("[:cv pi 220]{text}"));
+        assert!((low / normal_low - 2.0).abs() < 0.01 && (high / normal_high - 2.0).abs() < 0.01, "{low} {high}");
+        let (flat_low, flat_high) = f0_range(&format!("[:cv in 0]{text}"));
+        assert_eq!((flat_low, flat_high), (110.0, 110.0));
+        let (wide_low, wide_high) = f0_range(&format!("[:cv in 200]{text}"));
+        assert!(wide_high / wide_low > normal_high / normal_low * 1.5, "{wide_low} {wide_high}");
+    }
+
+    #[test]
+    fn cv_breathiness_adds_breath_to_voicing() {
+        let breath = |input: &str| {
+            let frames = text_frames(input, &Voice::default());
+            frames.iter().filter(|(_, f)| f.av >= 59.0).fold(0.0f64, |high, (_, f)| high.max(f.ah))
+        };
+        assert_eq!(breath("Hello there."), 0.0);
+        assert!((breath("[:cv br 40]Hello there.") - 40.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn roughness_changes_the_sound_and_not_the_timing() {
+        let plain = speak_text("Hello there.", &Voice::default(), 22050);
+        let rough = speak_text("[:cv rg 80]Hello there.", &Voice::default(), 22050);
+        assert_eq!(plain.len(), rough.len());
+        assert_ne!(plain, rough);
+        assert_eq!(speak_text("[:cv rg 0]Hello there.", &Voice::default(), 22050), plain);
     }
 
     #[test]

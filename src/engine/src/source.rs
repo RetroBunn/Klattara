@@ -1,6 +1,6 @@
 //! Excitation sources: the glottal pulse, its spectral tilt, and noise.
 
-use crate::singing::VIBRATO_RATE;
+use crate::singing::VIBRATO_SPEED;
 use std::f64::consts::PI;
 
 /// Flutter is a share of F0 in KLSYN88, so it grows with pitch: at 400 Hz it
@@ -19,6 +19,15 @@ const CREAK_ALTERNATION: f64 = 0.7;
 const CREAK_SHIMMER: f64 = 0.3;
 /// The open quotient shrinks by this share: the folds stay closed longer.
 const CREAK_OQ_DROP: f64 = 0.4;
+
+/// A rough voice at full strength: each period's length varies at random by up to
+/// this share, every second pulse is weaker by [`ROUGH_ALTERNATION`], and each pulse's
+/// strength varies at random by up to [`ROUGH_SHIMMER`]. These are the same kinds of
+/// unevenness as creak, without its fall in pitch, and much less of them, since they
+/// last the whole utterance.
+const ROUGH_JITTER: f64 = 0.05;
+const ROUGH_ALTERNATION: f64 = 0.5;
+const ROUGH_SHIMMER: f64 = 0.25;
 
 /// The voicing source: the time derivative of glottal airflow, after the
 /// KLGLOTT88 model of Klatt & Klatt (1990).
@@ -42,8 +51,14 @@ pub struct GlottalSource {
     flutter: f64,
     /// Creaky voice, 0 to 1.
     creak: f64,
+    /// Rough voice, 0 to 1.
+    roughness: f64,
     /// How far vibrato swings the pitch either way, in cents.
     vibrato: f64,
+    /// How fast it swings, Hz.
+    vibrato_speed: f64,
+    /// How far through its wave it is, 0 to 1.
+    vibrato_phase: f64,
     /// 1 holds the pitch free of flutter.
     steady: f64,
     /// Whether a glottal period is in progress.
@@ -71,7 +86,10 @@ impl GlottalSource {
             oq: 0.5,
             flutter: 0.0,
             creak: 0.0,
+            roughness: 0.0,
             vibrato: 0.0,
+            vibrato_speed: VIBRATO_SPEED,
+            vibrato_phase: 0.0,
             steady: 0.0,
             running: false,
             phase: 0.0,
@@ -101,6 +119,16 @@ impl GlottalSource {
         self.creak = creak.clamp(0.0, 1.0);
     }
 
+    /// Sets how rough the voice is, from 0 (smooth) to 1, for the next period.
+    pub fn set_roughness(&mut self, roughness: f64) {
+        self.roughness = roughness.clamp(0.0, 1.0);
+    }
+
+    /// Sets how fast vibrato swings, Hz.
+    pub fn set_vibrato_speed(&mut self, hz: f64) {
+        self.vibrato_speed = hz;
+    }
+
     /// Sets the vibrato, in cents either way, and how far flutter is held off, from
     /// 0 to 1, for the next period.
     pub fn set_singing(&mut self, vibrato: f64, steady: f64) {
@@ -117,12 +145,26 @@ impl GlottalSource {
         self.running = false;
         self.phase = 0.0;
         self.weak_pulse = false;
+        self.vibrato_phase = 0.0;
         self.wander.reset();
         self.samples_elapsed = 0;
     }
 
+    /// How far the phase moves this sample. Vibrato moves the pitch on every sample
+    /// rather than once a period, as flutter does, so its wave is smooth at any pitch:
+    /// at C2, once a period would be only 10 steps to the cycle.
+    fn current_step(&self) -> f64 {
+        if self.vibrato > 0.0 {
+            let swing = self.vibrato * (2.0 * PI * self.vibrato_phase).cos();
+            self.phase_step * 2f64.powf(swing / 1200.0)
+        } else {
+            self.phase_step
+        }
+    }
+
     pub fn next_sample(&mut self) -> f64 {
         self.samples_elapsed += 1;
+        self.vibrato_phase = (self.vibrato_phase + self.vibrato_speed / self.sample_rate).fract();
         if !self.running {
             if self.f0 <= 0.0 {
                 return 0.0;
@@ -130,7 +172,7 @@ impl GlottalSource {
             self.start_period();
         }
 
-        let (phase, step, oq) = (self.phase, self.phase_step, self.period_oq);
+        let (phase, step, oq) = (self.phase, self.current_step(), self.period_oq);
         let mut y = if phase < oq {
             let tau = phase / oq;
             tau * (2.0 - 3.0 * tau)
@@ -175,19 +217,16 @@ impl GlottalSource {
         let size = (FLUTTER_CEILING_HZ / self.f0).min(1.0);
         let flutter = self.flutter * (1.0 - self.steady);
         let mut f0 = self.f0 * (1.0 + flutter / 5000.0 * size * wobble);
-        if self.vibrato > 0.0 {
-            f0 *= 2f64.powf(self.vibrato * (2.0 * PI * VIBRATO_RATE * t).cos() / 1200.0);
-        }
-        let c = self.creak;
+        let (c, r) = (self.creak, self.roughness);
         self.period_gain = 1.0;
-        if c > 0.0 {
+        if c > 0.0 || r > 0.0 {
             let (jitter, shimmer) = (self.wander.next_uniform(), self.wander.next_uniform());
-            f0 *= (1.0 - CREAK_PITCH_DROP * c) * (1.0 + CREAK_JITTER * c * jitter);
+            f0 *= (1.0 - CREAK_PITCH_DROP * c) * (1.0 + (CREAK_JITTER * c + ROUGH_JITTER * r) * jitter);
             self.weak_pulse = !self.weak_pulse;
             if self.weak_pulse {
-                self.period_gain = 1.0 - CREAK_ALTERNATION * c;
+                self.period_gain = (1.0 - CREAK_ALTERNATION * c - ROUGH_ALTERNATION * r).max(0.0);
             }
-            self.period_gain *= 1.0 + CREAK_SHIMMER * c * shimmer;
+            self.period_gain *= 1.0 + (CREAK_SHIMMER * c + ROUGH_SHIMMER * r) * shimmer;
         } else {
             self.weak_pulse = false;
         }
@@ -329,18 +368,21 @@ mod tests {
         assert!((high - ceiling).abs() < 0.05, "{high} {ceiling}");
     }
 
-    /// The pitch of each period over two seconds, Hz.
-    fn period_pitches(f0: f64, vibrato: f64, steady: f64) -> Vec<f64> {
+    /// The pitch at each sample over two seconds, Hz.
+    fn pitches_at(f0: f64, vibrato: f64, steady: f64) -> Vec<f64> {
         let mut source = GlottalSource::new(SR);
         source.set_targets(f0, 0.5);
         source.set_flutter(25.0);
         source.set_singing(vibrato, steady);
-        (0..2 * SR as usize)
-            .filter_map(|_| {
+        let mut pitches: Vec<f64> = (0..2 * SR as usize)
+            .map(|_| {
                 source.next_sample();
-                (source.phase < source.phase_step).then_some(source.phase_step * SR)
+                source.current_step() * SR
             })
-            .collect()
+            .collect();
+        // The first period starts on the first sample.
+        pitches.remove(0);
+        pitches
     }
 
     /// The lowest and highest of a list.
@@ -350,20 +392,104 @@ mod tests {
 
     #[test]
     fn steady_holds_the_pitch_and_speech_has_flutter() {
-        let (low, high) = range(&period_pitches(110.0, 0.0, 1.0));
+        let (low, high) = range(&pitches_at(110.0, 0.0, 1.0));
         assert!(high - low < 1e-9, "{low} {high}");
-        let (low, high) = range(&period_pitches(110.0, 0.0, 0.0));
+        let (low, high) = range(&pitches_at(110.0, 0.0, 0.0));
         assert!(high - low > 0.5, "{low} {high}");
     }
 
     #[test]
     fn vibrato_is_the_same_interval_on_every_note() {
         for f0 in [65.41, 130.81, 261.63, 523.25] {
-            let (low, high) = range(&period_pitches(f0, 25.0, 1.0));
+            let (low, high) = range(&pitches_at(f0, 25.0, 1.0));
             // Up and down from the note by 25 cents, whatever the note.
             let (down, up) = (1200.0 * (f0 / low).log2(), 1200.0 * (high / f0).log2());
             assert!((down - 25.0).abs() < 0.5 && (up - 25.0).abs() < 0.5, "{f0}: {down} {up}");
         }
+    }
+
+    #[test]
+    fn vibrato_moves_smoothly_instead_of_in_steps() {
+        // At the lowest note, where a change once a period would jump by over 0.5 Hz.
+        let pitches = pitches_at(65.41, 25.0, 1.0);
+        let largest = pitches.windows(2).map(|pair| (pair[1] - pair[0]).abs()).fold(0.0, f64::max);
+        assert!(largest < 0.005, "{largest} Hz between two samples");
+    }
+
+    #[test]
+    fn vibrato_follows_a_sine() {
+        let pitches = pitches_at(220.0, 25.0, 1.0);
+        for (i, hz) in pitches.iter().enumerate() {
+            let phase = 2.0 * PI * VIBRATO_SPEED * (i + 2) as f64 / SR;
+            let expected = 220.0 * 2f64.powf(25.0 * phase.cos() / 1200.0);
+            assert!((hz - expected).abs() < 1e-6, "sample {i}: {hz} {expected}");
+        }
+    }
+
+    #[test]
+    fn vibrato_speed_sets_how_many_swings_there_are() {
+        for speed in [3.0, 6.2, 10.0] {
+            let mut source = GlottalSource::new(SR);
+            source.set_targets(220.0, 0.5);
+            source.set_singing(25.0, 1.0);
+            source.set_vibrato_speed(speed);
+            source.next_sample();
+            let (mut swings, mut above) = (0, source.current_step() * SR > 220.0);
+            for _ in 0..10 * SR as usize {
+                source.next_sample();
+                let now = source.current_step() * SR > 220.0;
+                if now && !above {
+                    swings += 1;
+                }
+                above = now;
+            }
+            assert!((f64::from(swings) - 10.0 * speed).abs() <= 1.0, "{speed} Hz: {swings} in 10 s");
+        }
+    }
+
+    /// The pitch and strength of each period over two seconds at 110 Hz.
+    fn rough_periods(roughness: f64) -> (Vec<f64>, Vec<f64>) {
+        let mut source = GlottalSource::new(SR);
+        source.set_targets(110.0, 0.5);
+        source.set_roughness(roughness);
+        let (mut pitches, mut strengths) = (Vec::new(), Vec::new());
+        for _ in 0..2 * SR as usize {
+            source.next_sample();
+            if source.phase < source.phase_step {
+                pitches.push(source.phase_step * SR);
+                strengths.push(source.period_gain);
+            }
+        }
+        (pitches, strengths)
+    }
+
+    #[test]
+    fn a_smooth_voice_stays_even() {
+        let (pitches, strengths) = rough_periods(0.0);
+        let (low, high) = range(&pitches);
+        assert!(high - low < 1e-9, "{low} {high}");
+        assert!(strengths.iter().all(|s| *s == 1.0));
+    }
+
+    #[test]
+    fn a_rough_voice_is_uneven_but_keeps_its_pitch() {
+        let (pitches, strengths) = rough_periods(1.0);
+        let (low, high) = range(&pitches);
+        assert!(low < 110.0 * 0.97 && high > 110.0 * 1.03, "{low} {high}");
+        let (weakest, strongest) = range(&strengths);
+        assert!(weakest < 0.6 && strongest > 1.0, "{weakest} {strongest}");
+        // Unlike creak, it doesn't lower the pitch.
+        let mean = pitches.iter().sum::<f64>() / pitches.len() as f64;
+        assert!((mean - 110.0).abs() < 2.0, "{mean}");
+    }
+
+    #[test]
+    fn half_roughness_is_gentler_than_full() {
+        let spread = |r: f64| {
+            let (low, high) = range(&rough_periods(r).0);
+            high - low
+        };
+        assert!(spread(0.5) < 0.7 * spread(1.0), "{} {}", spread(0.5), spread(1.0));
     }
 
     #[test]

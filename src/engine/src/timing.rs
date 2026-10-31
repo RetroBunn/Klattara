@@ -16,17 +16,26 @@ use crate::utterance::{Boundary, Segment};
 /// Lead-in silence before speech starts, ms.
 const LEAD_IN: f64 = 10.0;
 
-/// Pause lengths at normal rate, ms. Klatt used 200 ms at clause and comma
-/// boundaries; sentence ends get a little more.
+/// Pause lengths at normal rate, ms. Each kind of break is clearly longer than the
+/// one below it, so they stay apart when speech is compressed. With 180, 220 and
+/// 280 ms, a period was 26 ms of silence at 485 words per minute, no more than the
+/// gap between two words. Other voices part them much further: from comma to period,
+/// DECtalk's Paul goes from 74 to 449 ms of silence, Hazel from 206 to 784 and Zira
+/// from 409 to 850. DECtalk shrinks all its pauses by one factor as the rate rises,
+/// which keeps them apart, and so do we.
 fn pause_ms(boundary: Option<Boundary>) -> f64 {
     match boundary {
         None => LEAD_IN,
         Some(Boundary::Minor) => 0.0,
         Some(Boundary::Comma) => 180.0,
-        Some(Boundary::Clause) => 220.0,
-        Some(Boundary::Period | Boundary::Question | Boundary::WhQuestion | Boundary::Exclamation) => 280.0,
+        Some(Boundary::Clause) => 360.0,
+        Some(Boundary::Period | Boundary::Question | Boundary::WhQuestion | Boundary::Exclamation) => 540.0,
     }
 }
+
+/// The longest pause at the end of the text, ms. It only lets the last sound finish,
+/// and a screen reader's next line waits for it.
+const END_PAUSE: f64 = 280.0;
 
 /// Assigns durations and start times at the normal speaking rate (Klatt's
 /// nominal 180 words per minute). Pauses are multiplied by `pause_scale`.
@@ -37,7 +46,9 @@ pub fn assign_durations(segments: &mut [Segment], pause_scale: f64) {
         segments[i].duration = if let Some(written) = segments[i].written.duration {
             f64::from(written)
         } else if segments[i].phoneme == Phoneme::Pause {
-            pause_ms(segments[i].boundary) * pause_scale
+            let pause = pause_ms(segments[i].boundary);
+            let last = i == segments.len() - 1;
+            (if last { pause.min(END_PAUSE) } else { pause }) * pause_scale
         } else {
             let (compressible, minimum) = rule_duration(segments, i);
             compressible + minimum
@@ -246,6 +257,30 @@ mod tests {
         for seg in segs.iter().filter(|s| s.phoneme != Phoneme::Pause) {
             assert!(seg.duration >= spec(seg.phoneme).minimum / 2.0 - 1e-9, "{:?}", seg.phoneme);
         }
+    }
+
+    /// The pause after the first word of `input`, ms.
+    fn first_pause(input: &str) -> f64 {
+        let segs = timed(input);
+        segs.iter().skip(1).find(|s| s.phoneme == Phoneme::Pause).unwrap().duration
+    }
+
+    #[test]
+    fn each_kind_of_break_is_clearly_longer_than_the_last() {
+        let comma = first_pause("[HH AH0 L OW1], [W ER1 L D].");
+        let clause = first_pause("[HH AH0 L OW1]; [W ER1 L D].");
+        let period = first_pause("[HH AH0 L OW1]. [W ER1 L D].");
+        assert!(clause >= 1.5 * comma && period >= 1.4 * clause, "{comma} {clause} {period}");
+        assert_eq!(first_pause("[HH AH0 L OW1]: [W ER1 L D]."), clause);
+        assert_eq!(first_pause("[HH AH0 L OW1]? [W ER1 L D]."), period);
+        assert_eq!(first_pause("[HH AH0 L OW1]! [W ER1 L D]."), period);
+    }
+
+    #[test]
+    fn the_end_of_the_text_only_lets_the_last_sound_finish() {
+        let segs = timed("[HH AH0 L OW1]. [W ER1 L D].");
+        assert_eq!(segs.last().unwrap().duration, END_PAUSE);
+        assert!(first_pause("[HH AH0 L OW1]. [W ER1 L D].") > END_PAUSE);
     }
 
     #[test]

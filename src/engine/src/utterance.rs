@@ -96,6 +96,40 @@ impl fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
+/// Reads the inside of a phonetic word as far as it is valid: the words in it, since a
+/// rest divides a word, and the first sound that isn't valid, if there is one.
+pub fn read_sounds(body: &str) -> (Vec<Word>, Option<&str>) {
+    let (mut words, mut phonemes, mut written) = (Vec::new(), Vec::new(), Vec::new());
+    let mut bad = None;
+    for sound in singing::split_sounds(body) {
+        let Some((symbol, marks)) = singing::split_written(sound) else {
+            bad = Some(sound);
+            break;
+        };
+        if symbol == singing::REST {
+            let Some(duration) = marks.duration else {
+                bad = Some(sound);
+                break;
+            };
+            if !phonemes.is_empty() {
+                words.push(Word::with_written(std::mem::take(&mut phonemes), std::mem::take(&mut written)));
+            }
+            words.push(Word::rest(duration));
+        } else {
+            let Some(phoneme) = Phoneme::parse(symbol) else {
+                bad = Some(sound);
+                break;
+            };
+            phonemes.push(phoneme);
+            written.push(marks);
+        }
+    }
+    if !phonemes.is_empty() {
+        words.push(Word::with_written(phonemes, written));
+    }
+    (words, bad)
+}
+
 /// Parses bracketed phonetic input into phrases. Words after the last
 /// punctuation mark form a phrase ending in a period.
 pub fn parse(input: &str) -> Result<Vec<Phrase>, ParseError> {
@@ -118,28 +152,14 @@ pub fn parse(input: &str) -> Result<Vec<Phrase>, ParseError> {
                         }
                     }
                 }
-                let sounds = singing::split_sounds(&body);
-                if sounds.is_empty() {
+                let (read, bad) = read_sounds(&body);
+                if let Some(sound) = bad {
+                    return Err(ParseError(format!("unknown phoneme \"{sound}\"")));
+                }
+                if read.is_empty() {
                     return Err(ParseError(format!("empty word at character {}", at + 1)));
                 }
-                let (mut phonemes, mut written) = (Vec::new(), Vec::new());
-                for sound in sounds {
-                    let unknown = || ParseError(format!("unknown phoneme \"{sound}\""));
-                    let (symbol, marks) = singing::split_written(sound).ok_or_else(unknown)?;
-                    if symbol == singing::REST {
-                        let duration = marks.duration.ok_or_else(unknown)?;
-                        if !phonemes.is_empty() {
-                            words.push(Word::with_written(std::mem::take(&mut phonemes), std::mem::take(&mut written)));
-                        }
-                        words.push(Word::rest(duration));
-                    } else {
-                        phonemes.push(Phoneme::parse(symbol).ok_or_else(unknown)?);
-                        written.push(marks);
-                    }
-                }
-                if !phonemes.is_empty() {
-                    words.push(Word::with_written(phonemes, written));
-                }
+                words.extend(read);
                 continue;
             }
             '|' => Boundary::Minor,

@@ -112,7 +112,35 @@ int KLATTARA_CALL klattara_set_phrase_prediction(KlattaraEngine *engine, int pre
  * length and a pitch: [D AA1<400,20>]. A pitch of 1 to 39 is a note, 1 to 37 being
  * C2 to C5 by semitones and 38 and 39 also C5, sung with vibrato. A pitch of 40 to
  * 550 is in Hz, with no vibrato. <milliseconds> or <,pitch> gives only one of them,
- * and _<milliseconds> is a rest. Written lengths don't change with the rate. */
+ * and _<milliseconds> is a rest. Written lengths don't change with the rate.
+ *
+ * Other commands in ordinary text change the voice from that point on, and last on
+ * this engine until changed. A value beyond a setting's limits stops at the limit.
+ *   [:vb] or [:voice Brittany]  change voice, by first letter or by name.
+ *   [:cv pi 150 br 40]          customize the voice, with any of these settings:
+ *     pi  average pitch, 40 to 550 Hz
+ *     in  inflection, 0 to 250 percent of normal
+ *     hs  head size, 64 to 135 percent of normal
+ *     rg  roughness, 0 to 100
+ *     br  breathiness, 0 to 72 dB
+ *     rc  richness, 0 to 100 percent, more is thinner and buzzier, less fuller
+ *     sm  smoothness, 0 to 100 percent, more softens the voice but not consonants
+ *     ge  gender: 0 or f for female, 1 or m for male
+ * Changing voice replaces all of these with that voice's own. These don't depend on
+ * the voice:
+ *   [:speed 400] or [:spd 400]  speed, 38 to 1796 words per minute on ordinary text
+ *   [:volume 50]                volume, 0 to 200 percent, where 100 is normal
+ *   [:vibspeed 6.2]             how fast a sung note's vibrato swings, 0 to 20 Hz
+ *   [:vibdepth 25]              how far it swings either way, 0 to 200 cents
+ *   [:vibdelay 200]             how long a note holds still first, 0 to 5000 ms
+ *   [:reset]                    everything back to how an engine starts
+ *
+ * Mistakes in ordinary text are spoken aloud, and the text goes on. They aren't errors
+ * to the program. With KLATTARA_READ_PHONEMES, a bad phoneme is an error instead.
+ *   "Incorrect phoneme"    a bad sound, length or pitch with phoneme input on
+ *   "Incorrect command"    a command that doesn't exist, or one with no closing bracket
+ *   "Incorrect parameter"  words in place of a number, or a setting that doesn't exist
+ *   "Incorrect value"      a value that is missing, or isn't one of the choices */
 int KLATTARA_CALL klattara_speak(KlattaraEngine *engine, const char *input, int reading,
                                  KlattaraAudioCallback callback, void *user);
 

@@ -23,7 +23,8 @@ pub struct Frame {
     /// Creaky voice, 0 (normal) to 1: lower, irregular pitch with uneven
     /// pulses, as before a glottalized /t/.
     pub creak: f64,
-    /// Vibrato: how far the pitch swings either way, in cents. 0 is none.
+    /// Vibrato: how far the pitch swings either way, in cents. 0 is none. How fast it
+    /// swings is in [`crate::VoiceSettings::vibrato_speed`].
     pub vibrato: f64,
     /// 1 holds the pitch free of flutter, as a sung note is; 0 is ordinary speech.
     pub steady: f64,

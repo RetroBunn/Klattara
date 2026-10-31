@@ -42,6 +42,10 @@ pub struct VoiceDef {
     /// Breath noise heard through voicing, dB on the same scale as voicing
     /// itself. 0 is none.
     pub breathiness: f64,
+    /// Head size, as a percentage of normal, as in [`crate::Voice::head_size`].
+    pub head_size: f64,
+    /// Roughness, as in [`crate::Voice::roughness`]. 0 is none.
+    pub roughness: f64,
     /// Slow pitch wobble, as in [`crate::VoiceSettings::flutter`].
     pub flutter: f64,
     /// Output gain, which brings the voice to the level of the others. 1 is none.
@@ -63,6 +67,8 @@ pub const VOICES: &[VoiceDef] = &[
         open_quotient: 0.55,
         tilt: 0.0,
         breathiness: 0.0,
+        head_size: 100.0,
+        roughness: 0.0,
         flutter: 25.0,
         level: 1.0,
     },
@@ -77,6 +83,8 @@ pub const VOICES: &[VoiceDef] = &[
         open_quotient: 0.65,
         tilt: 3.0,
         breathiness: 36.0,
+        head_size: 100.0,
+        roughness: 0.0,
         flutter: 25.0,
         // More pulses per second carry more power: 1.9 dB more than Steve.
         level: 0.8,

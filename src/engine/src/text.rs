@@ -164,13 +164,23 @@ pub fn tokenize(text: &str) -> Vec<Token> {
             // A range with spaces, as of times: "1pm - 4pm", "1990 \u{2013} 1995".
             tokens.push(Token::Word("to".to_string()));
             i += 1;
+        } else if c == '-'
+            && (at(i + 1) == '-' || (i > 0 && chars[i - 1] == ' ' && at(i + 1) == ' '))
+            && chars[i + 1..].iter().any(|&after| !after.is_whitespace() && after != '-')
+        {
+            // A dash typed as hyphens: "yes -- no", "yes - no". A hyphen in a word
+            // has no space before it, and at the end of the text nothing follows.
+            tokens.push(Token::Boundary(Boundary::Clause));
+            while at(i) == '-' {
+                i += 1;
+            }
         } else if c == '%' && matches!(tokens.last(), Some(Token::Number { .. })) {
             tokens.push(Token::Expanded(vec!["percent"]));
             i += 1;
         } else {
             let boundary = match c {
-                ',' | '(' | ')' | '\u{2013}' | '\u{2014}' => Some(Boundary::Comma),
-                ';' | ':' => Some(Boundary::Clause),
+                ',' | '(' | ')' => Some(Boundary::Comma),
+                ';' | ':' | '\u{2013}' | '\u{2014}' => Some(Boundary::Clause),
                 '.' | '\u{2026}' => Some(Boundary::Period),
                 '?' => Some(Boundary::Question),
                 '!' => Some(Boundary::Exclamation),
@@ -1468,6 +1478,50 @@ pub fn phrases_with(text: &str, expand_abbreviations: bool, phrase_prediction: b
     let past = past_sentences.get(sentence).copied().unwrap_or(false);
     close_stretch(&mut mentioned, &mut phrases, &written, past, phrase_prediction, Boundary::Period);
     phrases
+}
+
+#[cfg(test)]
+mod dash_tests {
+    use super::*;
+
+    /// The boundary after the first phrase of `text`.
+    fn first_break(text: &str) -> Boundary {
+        phrases_with(text, true, false)[0].boundary
+    }
+
+    #[test]
+    fn a_dash_is_a_stronger_break_than_a_comma() {
+        for text in [
+            "Yes \u{2014} no.",
+            "Yes\u{2014}no.",
+            "Yes \u{2013} no.",
+            "Yes -- no.",
+            "Yes--no.",
+            "Yes - no.",
+            "Yes ---- no.",
+        ] {
+            assert_eq!(first_break(text), Boundary::Clause, "{text}");
+            assert_eq!(phrases_with(text, true, false).len(), 2, "{text}");
+        }
+        assert_eq!(first_break("Yes, no."), Boundary::Comma);
+        assert_eq!(first_break("Yes (no)."), Boundary::Comma);
+    }
+
+    #[test]
+    fn a_dash_at_the_end_breaks_nothing() {
+        for text in ["Yes -", "Yes --", "Yes - ", "Yes ----"] {
+            assert_eq!(phrases_with(text, true, false).len(), 1, "{text}");
+            assert_eq!(first_break(text), Boundary::Period, "{text}");
+        }
+    }
+
+    #[test]
+    fn hyphens_that_are_not_dashes_stay_as_they_were() {
+        // In a word, and in numbers, a hyphen makes no break.
+        for text in ["A well-known fact.", "It was -2 outside.", "From 1990 - 1995 here.", "From 1pm - 4pm here."] {
+            assert_eq!(phrases_with(text, true, false).len(), 1, "{text}");
+        }
+    }
 }
 
 #[cfg(test)]

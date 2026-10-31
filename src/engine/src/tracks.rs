@@ -17,7 +17,7 @@
 use crate::frame::Frame;
 use crate::phoneme::{Manner, Phoneme, Stress};
 use crate::phonetics::{CODA_R, FRONT_VELAR, NASALIZED_ZERO, OR_NUCLEUS, SILENT, Sound, spec};
-use crate::singing::{VIBRATO_CENTS, is_note};
+use crate::singing::{VIBRATO_FADE, is_note};
 use crate::speech::Voice;
 use crate::synth::Synth;
 use crate::utterance::{Segment, syllabic_consonant};
@@ -504,13 +504,14 @@ fn creak_track(segments: &[Segment]) -> Track<f64> {
 /// never across the whole gap to the next frame.
 const SINGING_EDGE: f64 = 1.0;
 
-/// Vibrato and steadiness over time. A sung stretch is steady throughout, with
-/// vibrato while its latest pitch is a note and none while it is in Hz.
-fn singing_tracks(segments: &[Segment]) -> (Track<f64>, Track<f64>) {
+/// Vibrato and steadiness over time. A sung stretch is steady throughout, with vibrato
+/// while its latest pitch is a note and none while it is in Hz. Vibrato fades in, after
+/// the voice's delay. With a delay, each new note starts still again; with none, the
+/// vibrato carries on across notes.
+fn singing_tracks(segments: &[Segment], voice: &Voice) -> (Track<f64>, Track<f64>) {
     let (mut vibrato, mut steady) = (Track::new(), Track::new());
     vibrato.push(0.0, 0.0);
     steady.push(0.0, 0.0);
-    let size = |note: bool| if note { VIBRATO_CENTS } else { 0.0 };
     let mut i = 0;
     while i < segments.len() {
         if !segments[i].singing {
@@ -527,16 +528,30 @@ fn singing_tracks(segments: &[Segment]) -> (Track<f64>, Track<f64>) {
         steady.push(begin, 1.0);
         steady.push(end, 1.0);
         steady.push(end + SINGING_EDGE, 0.0);
-        let mut now = size(stretch.iter().find_map(|s| s.written.pitch).is_some_and(is_note));
+        let depth = voice.vibrato_depth;
+        let delay = voice.vibrato_delay;
+        let pitched: Vec<&Segment> = stretch.iter().filter(|s| s.written.pitch.is_some()).collect();
+        let mut now = 0.0;
         vibrato.push(begin - SINGING_EDGE, 0.0);
-        vibrato.push(begin, now);
-        for seg in stretch {
-            let Some(pitch) = seg.written.pitch else { continue };
-            let next = size(is_note(pitch));
-            if next != now {
+        vibrato.push(begin, 0.0);
+        for (i, seg) in pitched.iter().enumerate() {
+            let note = seg.written.pitch.is_some_and(is_note);
+            if note && now == depth && delay == 0.0 {
+                continue;
+            }
+            if now > 0.0 {
                 vibrato.push(seg.start, now);
-                vibrato.push(seg.start + SINGING_EDGE, next);
-                now = next;
+                vibrato.push(seg.start + SINGING_EDGE, 0.0);
+                now = 0.0;
+            }
+            if note && depth > 0.0 {
+                let until = pitched.get(i + 1).map_or(end, |next| next.start);
+                let (from, full) = (seg.start + delay, seg.start + delay + VIBRATO_FADE);
+                if from < until {
+                    vibrato.push(from, 0.0);
+                    now = if full <= until { depth } else { depth * (until - from) / VIBRATO_FADE };
+                    vibrato.push(full.min(until), now);
+                }
             }
         }
         vibrato.push(end, now);
@@ -559,7 +574,7 @@ pub fn frames(segments: &[Segment], pitch: &[(f64, f64)], voice: &Voice) -> Vec<
     let formants = formant_track(segments, voice.gender);
     let sound = sound_track(segments);
     let creak = creak_track(segments);
-    let (vibrato, steady) = singing_tracks(segments);
+    let (vibrato, steady) = singing_tracks(segments, voice);
     let mut f0 = Track::new();
     for &(t, hz) in pitch {
         f0.push(t, hz);
@@ -587,6 +602,9 @@ pub fn frames(segments: &[Segment], pitch: &[(f64, f64)], voice: &Voice) -> Vec<
     let defaults = Frame::default();
     let upper = voice.gender.upper_share();
     let widths = voice.gender.bandwidth_share();
+    // One factor for every resonance and its bandwidth, so that the whole spectrum
+    // stretches evenly and keeps its shape.
+    let head = 100.0 / voice.head_size;
     times
         .into_iter()
         .map(|t| {
@@ -603,27 +621,27 @@ pub fn frames(segments: &[Segment], pitch: &[(f64, f64)], voice: &Voice) -> Vec<
                 ah: breath(&s, voice.breathiness),
                 af: s.af,
                 freq: [
-                    f.freq[0],
-                    f.freq[1],
-                    f.freq[2],
-                    defaults.freq[3] * upper,
-                    defaults.freq[4] * upper,
-                    s.f6 * upper,
+                    f.freq[0] * head,
+                    f.freq[1] * head,
+                    f.freq[2] * head,
+                    defaults.freq[3] * upper * head,
+                    defaults.freq[4] * upper * head,
+                    s.f6 * upper * head,
                 ],
                 bw: [
-                    f.bw[0] * widths,
-                    f.bw[1] * widths,
-                    f.bw[2] * widths,
-                    defaults.bw[3] * widths,
-                    defaults.bw[4] * widths,
-                    defaults.bw[5] * widths,
+                    f.bw[0] * widths * head,
+                    f.bw[1] * widths * head,
+                    f.bw[2] * widths * head,
+                    defaults.bw[3] * widths * head,
+                    defaults.bw[4] * widths * head,
+                    defaults.bw[5] * widths * head,
                 ],
-                fnp: s.fnp * upper,
-                bnp: s.bnp,
-                fnz: s.fnz * upper,
-                bnz: 100.0,
+                fnp: s.fnp * upper * head,
+                bnp: s.bnp * head,
+                fnz: s.fnz * upper * head,
+                bnz: 100.0 * head,
                 par_amp: s.par_amp,
-                par_bw: defaults.par_bw,
+                par_bw: defaults.par_bw.map(|width| width * head),
                 ab: s.ab,
             };
             (t, frame)
@@ -674,7 +692,9 @@ pub fn render(synth: &mut Synth, frames: &[(f64, Frame)]) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frame::NUM_FORMANTS;
     use crate::intonation::pitch_keyframes;
+    use crate::singing::VIBRATO_DEPTH;
     use crate::timing::assign_durations;
     use crate::utterance::{parse, segments};
 
@@ -716,7 +736,7 @@ mod tests {
             frame_at(&frames, vowel.start + vowel.duration / 2.0)
         };
         let note = at_vowel("[AA1<1000,39>].");
-        assert_eq!((note.vibrato, note.steady, note.f0), (VIBRATO_CENTS, 1.0, 523.25));
+        assert_eq!((note.vibrato, note.steady, note.f0), (VIBRATO_DEPTH, 1.0, 523.25));
         let hz = at_vowel("[AA1<1000,40>].");
         assert_eq!((hz.vibrato, hz.steady, hz.f0), (0.0, 1.0, 40.0));
         let top = at_vowel("[AA1<1000,550>].");
@@ -730,7 +750,69 @@ mod tests {
     fn vibrato_changes_with_the_kind_of_pitch() {
         let (segs, frames) = plan("[AA1<500,20> IY1<500,200> AA1<500,20>].");
         let mid = |i: usize| frame_at(&frames, segs[i].start + segs[i].duration / 2.0).vibrato;
-        assert_eq!((mid(1), mid(2), mid(3)), (VIBRATO_CENTS, 0.0, VIBRATO_CENTS));
+        assert_eq!((mid(1), mid(2), mid(3)), (VIBRATO_DEPTH, 0.0, VIBRATO_DEPTH));
+    }
+
+    /// Plans sung input with vibrato settings, and gives a way to read the depth at a
+    /// time after the start of a segment.
+    fn sung_depths(input: &str, delay: f64, depth: f64) -> (Vec<Segment>, Vec<(f64, Frame)>) {
+        let mut segs = segments(&parse(input).unwrap());
+        assign_durations(&mut segs, 1.0);
+        let pitch = pitch_keyframes(&segs, 110.0, 1.0);
+        let voice = Voice { vibrato_delay: delay, vibrato_depth: depth, ..Voice::default() };
+        let frames = frames(&segs, &pitch, &voice);
+        (segs, frames)
+    }
+
+    fn depth_at(frames: &[(f64, Frame)], t: f64) -> f64 {
+        let i = frames.partition_point(|f| f.0 <= t);
+        let ((t0, a), (t1, b)) = (frames[i - 1], frames[i]);
+        a.vibrato + (b.vibrato - a.vibrato) * (t - t0) / (t1 - t0)
+    }
+
+    #[test]
+    fn vibrato_fades_in_rather_than_starting_at_once() {
+        let (segs, frames) = sung_depths("[AA1<1000,20>].", 0.0, 25.0);
+        let s = segs[1].start;
+        assert_eq!(depth_at(&frames, s + 0.5), depth_at(&frames, s + 0.5).min(1.0));
+        assert!((depth_at(&frames, s + VIBRATO_FADE / 2.0) - 12.5).abs() < 0.01);
+        assert_eq!(depth_at(&frames, s + VIBRATO_FADE + 1.0), 25.0);
+    }
+
+    #[test]
+    fn vibrato_delay_holds_each_note_still_first() {
+        let (segs, frames) = sung_depths("[AA1<800,20> AA1<800,22>].", 300.0, 25.0);
+        for seg in &segs[1..3] {
+            assert_eq!(depth_at(&frames, seg.start + 100.0), 0.0);
+            assert_eq!(depth_at(&frames, seg.start + 299.0), 0.0);
+            assert!((depth_at(&frames, seg.start + 300.0 + VIBRATO_FADE / 2.0) - 12.5).abs() < 0.01);
+            assert_eq!(depth_at(&frames, seg.start + 500.0), 25.0);
+        }
+    }
+
+    #[test]
+    fn with_no_delay_vibrato_carries_on_across_notes() {
+        let (segs, frames) = sung_depths("[AA1<500,20> AA1<500,22>].", 0.0, 25.0);
+        assert_eq!(depth_at(&frames, segs[2].start + 1.0), 25.0);
+    }
+
+    #[test]
+    fn a_note_shorter_than_its_delay_has_no_vibrato() {
+        let (_, frames) = sung_depths("[AA1<200,20> AA1<200,22>].", 300.0, 25.0);
+        assert!(frames.iter().all(|(_, f)| f.vibrato == 0.0));
+    }
+
+    #[test]
+    fn a_note_shorter_than_its_fade_gets_part_of_the_way() {
+        let (segs, frames) = sung_depths("[AA1<60,20> AA1<500,300>].", 0.0, 24.0);
+        assert!((depth_at(&frames, segs[1].end() - 0.01) - 12.0).abs() < 0.1);
+        assert_eq!(depth_at(&frames, segs[2].start + 100.0), 0.0);
+    }
+
+    #[test]
+    fn a_depth_of_nothing_is_no_vibrato_at_all() {
+        let (_, frames) = sung_depths("[AA1<800,20>].", 0.0, 0.0);
+        assert!(frames.iter().all(|(_, f)| f.vibrato == 0.0));
     }
 
     #[test]
@@ -739,6 +821,48 @@ mod tests {
         let vowel = segs.iter().find(|s| s.phoneme == Phoneme::AE).unwrap();
         assert_eq!(frame_at(&frames, vowel.end() - 10.0).av, frame_at(&frames, vowel.start + 100.0).av);
         assert!(frames.iter().all(|(_, f)| f.creak == 0.0));
+    }
+
+    /// Plans with a head size, at the male model's usual settings.
+    fn with_head(input: &str, head_size: f64) -> Vec<(f64, Frame)> {
+        let mut segs = segments(&parse(input).unwrap());
+        assign_durations(&mut segs, 1.0);
+        let pitch = pitch_keyframes(&segs, 110.0, 1.0);
+        frames(&segs, &pitch, &Voice { head_size, ..Voice::default() })
+    }
+
+    #[test]
+    fn head_size_stretches_the_whole_spectrum_by_one_factor() {
+        let input = "[M AA1 S IY1 K AH0 N].";
+        let normal = with_head(input, 100.0);
+        for head_size in [64.0, 80.0, 125.0, 135.0] {
+            let scaled = with_head(input, head_size);
+            let share = 100.0 / head_size;
+            assert_eq!(normal.len(), scaled.len());
+            for ((t0, a), (t1, b)) in normal.iter().zip(&scaled) {
+                assert_eq!(t0, t1);
+                let same = |x: f64, y: f64| (x * share - y).abs() < 1e-9;
+                assert!((0..NUM_FORMANTS).all(|k| same(a.freq[k], b.freq[k])), "{:?} {:?}", a.freq, b.freq);
+                assert!((0..NUM_FORMANTS).all(|k| same(a.bw[k], b.bw[k])), "{:?} {:?}", a.bw, b.bw);
+                assert!((0..NUM_FORMANTS).all(|k| same(a.par_bw[k], b.par_bw[k])));
+                assert!(same(a.fnp, b.fnp) && same(a.fnz, b.fnz) && same(a.bnp, b.bnp) && same(a.bnz, b.bnz));
+                // Nothing else about the sound moves.
+                assert_eq!((a.f0, a.av, a.ah, a.af, a.oq, a.tl), (b.f0, b.av, b.ah, b.af, b.oq, b.tl));
+            }
+        }
+    }
+
+    #[test]
+    fn a_larger_head_is_lower_and_a_smaller_one_higher() {
+        let f1 = |head_size: f64| with_head("[AA1 AA1 AA1].", head_size)[3].1.freq[0];
+        assert!(f1(135.0) < f1(100.0) && f1(100.0) < f1(64.0));
+    }
+
+    #[test]
+    fn the_nasal_zero_still_cancels_outside_nasals_at_any_head_size() {
+        for (_, f) in with_head("[AA1 S AA1].", 80.0) {
+            assert_eq!(f.fnp, f.fnz);
+        }
     }
 
     #[test]

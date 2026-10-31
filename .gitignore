@@ -1,6 +1,7 @@
 /target
 /samples
 /dist
+/dectalk
 /.venv
 __pycache__/
 # Research papers are copyrighted; only the index is shared.

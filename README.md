@@ -2,7 +2,7 @@
 
 Klattara is a text-to-speech synthesizer for American English. It is built in the tradition of Dennis Klatt's formant synthesizers, the research behind DECtalk. It does not play back recordings of a human voice. Instead it computes every sound from a model of the vocal tract, so the voice stays clear and steady at very high speaking rates. That makes it a good fit for screen reader users who listen fast.
 
-It ships as an add-on for the NVDA screen reader, and as a Windows library (klattara.dll) with a plain C interface that other programs can use.
+It ships as an add-on for the NVDA screen reader, as a Windows library (klattara.dll) with a plain C interface that other programs can use, and as KlattPad, a small program for typing text and hearing it spoken.
 
 ## Features
 
@@ -23,8 +23,9 @@ It ships as an add-on for the NVDA screen reader, and as a Windows library (klat
 - Two voices: Steve, the default, and Brittany. Each voice has a gender, which chooses its model of the vocal tract. Brittany's vowels come from measurements of women's speech, not from raising Steve's pitch (Hillenbrand and others 1995). The voices are defined in src/engine/src/voicedefs.rs.
 - Phoneme input, as in DECtalk: a command in the text lets you write a word's sounds in ARPAbet in among ordinary words.
 - Singing, as in DECtalk: any sound can have a written length and pitch, with notes from C2 to C5 sung with vibrato, or a pitch in Hz with none.
+- Commands in the text, as in DECtalk, to change voice, to customize a voice's pitch, inflection, head size, roughness and breathiness, and to set the speed, volume and vibrato.
 - Live control of rate, pitch, inflection (how much the pitch moves) and volume.
-- No GPL code, no SAPI and none of DECtalk's code. Everything is written from published papers and openly licensed data, except that singing is modeled on how DECtalk sings, from its preserved source code and measurements of its output.
+- No GPL code, no SAPI and none of DECtalk's code. Everything is written from published papers and openly licensed data.
 
 ## Installing the NVDA add-on
 
@@ -46,7 +47,25 @@ You find these in NVDA's Voice settings, opened with NVDA+Control+V.
 5. Expand abbreviations: checked by default. When checked, "Dr." is read "doctor" and "Calif." is read "California". When unchecked, abbreviations are read as written: spelled out when they have no vowel, and sounded out when they do.
 6. Phrase prediction: unchecked by default, as most screen reader users prefer. When checked, a long sentence without commas is broken into phrases where a reader would break it, such as before "which" or "toward": the pitch falls a little and starts afresh, with no pause. It can make long sentences in documents easier to follow.
 
-The sliders map evenly onto the engine's values, as DECtalk's do. Rate goes from 0.29 to 5 times normal, pitch from 40 to 550 Hz, and inflection from 0 to 250 percent of normal.
+## KlattPad
+
+KlattPad is a window for typing text and hearing Klattara speak it. It is a plain Windows program, klattpad.exe, that needs nothing else installed, and it is built from standard Windows controls so that screen readers can read all of it.
+
+The window has a multi-line edit field on the left. On the right, from top to bottom, are the Voice box and the Rate and Volume sliders, and along the bottom are the Play, Pause and Stop buttons. The Rate slider works as the NVDA add-on's does, with 15 as normal, and the Volume slider starts at full.
+
+- F5 plays. With text selected, it plays the selection, and otherwise all the text. A change to the voice, rate or volume applies the next time you press Play. If speech is paused, F5 resumes it.
+- F6 pauses, and the Pause button and menu item change to Resume until you press it again.
+- F7 stops.
+
+Tab and Shift+Tab move between the controls, and coming back to the edit field leaves the cursor where it was. Ctrl+Tab types a tab in the edit field.
+
+The menus are:
+
+1. File: New (Ctrl+N), Open (Ctrl+O), Save (Ctrl+S), Save As (Ctrl+Shift+S), Export WAV (Ctrl+E) and Exit. Files open in UTF-8, UTF-16 or Windows-1252, and save as UTF-8. Export WAV speaks all the text to a file, using the current voice, rate and volume.
+2. Edit: Undo, Cut, Copy, Paste, Delete and Select All, with their usual keys.
+3. Speech: Play, Pause and Stop, then a Voice submenu.
+
+Text goes straight to the engine, so phoneme input, voice commands and singing work here: see those sections below. Each Play starts from the controls, with phoneme input off, so a document sets what it needs with its own commands. A selection follows the commands before it, so one line of a song plays as it does in the song.
 
 ## Using the library from other programs
 
@@ -105,9 +124,54 @@ The setting stays on the engine until it is changed, across calls and changes of
 
     [:phone klattara enable] Say [HH AH0 L OW1] now. [:phone klattara disable]
 
-The stress digits are 0 for unstressed, 1 for primary and 2 for secondary. Besides the sounds of the CMU Pronouncing Dictionary, you can use AX for a schwa, DX for a flap and LX for a dark L. Any other bracket is ordinary text, even with phoneme input on: a citation like "[1]", a slice like "a[:5]", or a misspelled command, which you then hear read aloud.
+The stress digits are 0 for unstressed, 1 for primary and 2 for secondary. Besides the sounds of the CMU Pronouncing Dictionary, you can use AX for a schwa, DX for a flap and LX for a dark L. With phoneme input off, a bracket with no colon is ordinary text, such as a citation like "[1]". With it on, any bracket is taken as sounds, so that one says "Incorrect phoneme": see Mistakes below.
 
 Commands are only read from ordinary text, not from `KLATTARA_READ_SPELLED` or `KLATTARA_READ_PHONEMES`. A program that reads text it doesn't control should remove `[:` from it first, as the NVDA add-on does. In NVDA, "[:phone klattara enable]" on a web page is read as the words "phone klattara enable", and phoneme input stays off.
+
+### Voice commands
+
+Ordinary text can also contain commands that change the voice from that point on. Upper or lower case and extra spaces don't matter. What a command sets stays on the engine until something changes it, across calls.
+
+To change voice, use the voice's first letter or its name:
+
+- `[:vs]` or `[:voice Steve]`
+- `[:vb]` or `[:voice Brittany]`
+
+To customize the voice, use `[:cv]` with any of these settings, in any order, such as `[:cv pi 150 hs 110 br 40]`:
+
+1. `pi`, average pitch: 40 to 550 Hz.
+2. `in`, inflection: 0 to 250 percent of normal pitch movement, where 0 is a monotone and 100 is normal.
+3. `hs`, head size: 64 to 135 percent of normal, starting at 100. A larger head sounds lower and deeper, because its longer vocal tract lowers every resonance by the same share.
+4. `rg`, roughness: 0 to 100, starting at 0. It makes the voice uneven from one pulse to the next.
+5. `br`, breathiness: 0 to 72 dB, the level of breath noise through the voice. Steve starts at 0 and Brittany at 36.
+6. `rc`, richness: 0 to 100 percent. More weakens the lowest harmonics, which sounds thinner and buzzier, and less strengthens them, which sounds fuller and softer. Steve is at 50 and Brittany at about 36.
+7. `sm`, smoothness: 0 to 100 percent. More takes the edge off the voice by weakening its high frequencies. Only the voice softens, so at high settings consonants like S stand out more. Steve is at 0 and Brittany at 12.
+8. `ge`, gender: 0 or f for female, and 1 or m for male. It chooses the model of the vocal tract and changes nothing else, so set the pitch as well.
+
+Three more commands don't depend on the voice, so a change of voice leaves them as they are, along with phoneme input and the vibrato settings below:
+
+- `[:speed 400]` or `[:spd 400]` sets the speed, in words per minute, from 38 to 1796. That is the pace on ordinary text: short sentences run slower than the number, and long ones with few pauses faster.
+- `[:volume 50]` sets the volume as a percentage, from 0 to 200, where 100 is normal.
+- `[:reset]` returns every setting to how an engine starts, including the voice, speed, volume, vibrato, phoneme input, and the settings for abbreviations and phrase prediction.
+
+A value beyond a setting's limits stops at the limit. Changing voice replaces all the `[:cv]` settings with that voice's own values.
+
+A voice command breaks the speech where it falls, because the speech before it is spoken as the voice was. In NVDA these commands are read as words and do nothing, as with phoneme input.
+
+### Mistakes
+
+As in DECtalk, a mistake is spoken aloud in the current voice, as a sentence of its own, and the text goes on. There are four alerts:
+
+- "Incorrect phoneme": with phoneme input on, a bracket holding something that isn't a sound, or a bad length or pitch. That includes a citation like "[1]". An empty bracket is no mistake.
+- "Incorrect command": a command that doesn't exist, such as `[:foo]`, or a slice in program text like `a[:5]`.
+- "Incorrect parameter": something a command can't use, such as `[:speed fast]`, `[:cv xx 5]` or `[:reset now]`.
+- "Incorrect value": a value that is missing or isn't one of the choices, such as `[:speed]`, `[:voice nobody]` or `[:cv ge 2]`.
+
+What comes before a mistake in its bracket still counts, and the rest of the bracket is skipped. `[HH AH0 QQ L OW1]` speaks the first two sounds and then the alert, and `[:cv pi 150 xx 5 br 40]` sets the pitch, says the alert, and leaves the breathiness alone.
+
+If a bracket is never closed, you hear the alert and the words after it are read as ordinary text. DECtalk skips everything up to the next closing bracket instead, which can lose a long stretch of a document.
+
+A number beyond a setting's limits is not a mistake: it stops at the limit. With `KLATTARA_READ_PHONEMES`, a bad phoneme returns an error to the program and says nothing, because there the whole input is meant to be phonetic. In NVDA none of these alerts can happen, because the add-on removes `[:` from what it reads and leaves phoneme input off.
 
 ### Singing
 
@@ -120,9 +184,17 @@ Phonetic input can be sung, in the same ARPAbet. After any sound, `<milliseconds
 - `<milliseconds>` gives only a length, and `<,pitch>` gives only a pitch.
 - `_<milliseconds>` is a rest.
 
+Three commands change the vibrato on notes:
+
+- `[:vibspeed 6.2]` sets how fast it swings, from 0 to 20 Hz. It starts at 6.2.
+- `[:vibdepth 25]` sets how far it swings the pitch either way, from 0 to 200 cents, the same interval on every note. A hundred cents is a semitone. It starts at 25.
+- `[:vibdelay 200]` sets how long each note holds still before its vibrato starts, from 0 to 5000 ms. It starts at 0, where the vibrato carries on from one note to the next.
+
+The vibrato is a smooth sine wave, and it fades in over about a tenth of a second.
+
 A stretch of speech with a written pitch follows only its written pitches: it has no accents and no falling end. A sound with no pitch of its own holds the pitch before it. A new note takes 100 ms to arrive, and a new pitch in Hz glides across the whole of its sound. The voice's pitch, inflection and speaking rate don't change a song: every voice sings the same notes, and a written length stays exact at any rate. Sounds with no written length still follow the rate.
 
-Songs are written as phonetic input, so they need phoneme input turned on, or `KLATTARA_READ_PHONEMES`. A bad length or pitch makes a bracket ordinary text, or with `KLATTARA_READ_PHONEMES` an error. The NVDA add-on doesn't sing, because it removes commands from what it reads.
+Songs are written as phonetic input, so they need phoneme input turned on, or `KLATTARA_READ_PHONEMES`. A bad length or pitch says "Incorrect phoneme", or with `KLATTARA_READ_PHONEMES` is an error. The NVDA add-on doesn't sing, because it removes commands from what it reads, but KlattPad does.
 
 ### The Rust interface
 
@@ -162,7 +234,7 @@ To build the NVDA add-on, you also need the 32-bit target above, and both 64-bit
     git clone --depth 1 https://github.com/nvaccess/nvda nvda
     python src/plat/nvda/build.py
 
-That builds both DLLs, tests the driver on each, and writes dist/klattara-1.0.nvda-addon, which carries both. To test the 32-bit DLL on the code of 32-bit NVDA rather than current NVDA, also clone its last release; the tests use it if it's there:
+That builds both DLLs, tests the driver on each, and writes dist/klattara-1.0.nvda-addon, which carries both. KlattPad needs nothing more than `cargo build --release`, which writes target/release/klattpad.exe. To test the 32-bit DLL on the code of 32-bit NVDA rather than current NVDA, also clone its last release; the tests use it if it's there:
 
     git clone --depth 1 --branch release-2025.1 https://github.com/nvaccess/nvda nvda-release-2025.1
 
@@ -178,6 +250,8 @@ To try the voice without NVDA, the say example writes a WAV file and prints the 
 
 Run the unit tests with `cargo test --release`. They check the signal processing, durations, text reading and the C interface. Add `--target i686-pc-windows-msvc` to run them in 32-bit.
 
+src/plat/klattpad/test_klattpad.py tests KlattPad itself: the real program, through its real window, on a hidden desktop so that it doesn't take the focus. Playing is tested at volume 0, so it makes no sound. Its first lines say how to run it.
+
 The tools in src/tools measure how clear the voice is, using a speech recognizer as a stand-in for a listener. They need a Python environment in .venv with faster-whisper and numpy installed. They test the default voice, or the one named by the KLATTARA_VOICE environment variable. The scores show whether sounds stay distinct, but not whether a voice sounds good: a recognizer always prefers a brighter voice to a breathier one, so voice quality is judged by ear.
 
 - intelligibility.py reads the Harvard sentences in sentences.tsv at chosen rates, and reports the share of words the recognizer got right.
@@ -191,7 +265,7 @@ The tools in src/tools measure how clear the voice is, using a speech recognizer
 1. Text is split into sentences and phrases. Numbers, dates, money, abbreviations and symbols are turned into words. With phrase prediction on, a long stretch without punctuation is also split, before words that start a new group, such as "and it", "which" or a preposition, into parts of similar length (Bachenko and Fitzpatrick 1990).
 2. Each word's pronunciation comes from the dictionary or a homograph rule. A word the dictionary lacks is built from its stem if it has a common ending ("rebooted"), or else goes to the letter-to-sound model, whose main stress is checked against a table of word endings ("relegation"). If the model is unsure of a word, and it is made of two known words ("webcam"), it is said as those two words. Endings like -s and -ed are marked, since they change how the word is timed. Each word keeps a single main stress. A compound stresses its first part ("MIcrosoft"), and words like "nineteen" and "outside" follow the rhythm of the sentence ("she's nineTEEN", "NINEteen EIGHty").
 3. The sounds are grouped into syllables, and each takes the right variant for its position, such as an aspirated, a flapped or a glottalized T. Before a glottalized T, the voice turns creaky, lower and uneven, as most American speakers' voices do (Garellek and Seyfarth 2016).
-4. Klatt's duration rules set each sound's length from its stress, its place in the word and phrase, and its neighbors. The whole timeline is then compressed to the speaking rate.
+4. Klatt's duration rules set each sound's length from its stress, its place in the word and phrase, and its neighbors. Punctuation sets the pauses: a comma or parenthesis is the shortest, a semicolon, colon or dash is twice that, and the end of a sentence three times. The whole timeline is then compressed to the speaking rate, and the pauses shrink together, so they stay apart at any speed.
 5. A pitch contour is laid over each phrase, with accents on stressed words and a rise or fall at the end that depends on the punctuation. Each accent is a little lower than the one before, but never less than half height, so long sentences don't flatten out. Following Bell Labs' accent rules (Hirschberg 1993), words that only link clauses, such as "which" in mid-sentence or "because", get no accent, and neither does a word mentioned before ("buy a DOG, but I'm allergic to dogs"), unless it is a name or a number. Questions that start with a question word, such as "What time is it?", fall like statements, as most do in American speech; other questions rise.
 6. Each sound has targets for the formants, the resonances of the vocal tract. Smooth transitions join the targets, so the resonances glide from one sound to the next. A female voice takes each target from a table of its own, because a shorter vocal tract is not simply the same one scaled: women's first formant is 7 to 29 percent higher than men's, depending on the vowel.
 7. The formant synthesizer turns these tracks into audio: a glottal pulse and noise sources shaped by a chain of resonators.
@@ -200,6 +274,7 @@ The tools in src/tools measure how clear the voice is, using a speech recognizer
 
 - src/engine: the speech engine, as a Rust library, with examples.
 - src/plat/windows: klattara.dll and its C header.
+- src/plat/klattpad: KlattPad and its tests.
 - src/plat/nvda: the NVDA add-on, its build script and its tests.
 - src/data: the pronouncing dictionary, the hand-written additions to it, the letter-to-sound model and the homograph table.
 - src/tools: Python tools for measuring clarity and for rebuilding the data.
