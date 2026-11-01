@@ -39,9 +39,20 @@ impl Boundary {
     }
 }
 
+/// What pitch accent a word can carry, apart from its stress.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WordAccent {
+    Full,
+    /// A light verb or a quantifier, usually accented weakly: "get", "very".
+    Light,
+    /// Keeps its stress, but takes no accent: "not", "when".
+    Unaccented,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Word {
     pub phonemes: Vec<(Phoneme, Stress)>,
+    pub accent: WordAccent,
     /// Whether the last consonant is an ending, the -s of "songs" or the -ed
     /// of "turned", rather than part of the word itself as in "bronze" or
     /// "bend". Endings do not lengthen the vowel (Klatt's rule 9).
@@ -59,7 +70,7 @@ impl Word {
             phonemes.as_slice(),
             [.., (before, _), (Phoneme::Z, _)] if matches!(before.manner(), Manner::Nasal | Manner::Liquid)
         );
-        Word { phonemes, ending, written: Vec::new() }
+        Word { phonemes, accent: WordAccent::Full, ending, written: Vec::new() }
     }
 
     /// A word whose sounds may have lengths and pitches written after them.
@@ -71,7 +82,7 @@ impl Word {
     /// A rest of this many milliseconds.
     fn rest(duration: u32) -> Word {
         let written = vec![Written { duration: Some(duration), pitch: None }];
-        Word { phonemes: vec![(Phoneme::Pause, Stress::Unstressed)], ending: false, written }
+        Word { phonemes: vec![(Phoneme::Pause, Stress::Unstressed)], accent: WordAccent::Full, ending: false, written }
     }
 
     fn is_rest(&self) -> bool {
@@ -254,8 +265,10 @@ pub struct Segment {
     pub in_phrase_final_syllable: bool,
     /// In the last syllable before a pause.
     pub in_clause_final_syllable: bool,
-    /// The vowel of a primary-stressed syllable, which carries a pitch accent.
+    /// The vowel of a primary-stressed syllable, which normally carries a pitch accent.
     pub accented: bool,
+    /// What pitch accent the word can carry.
+    pub accent: WordAccent,
     /// Part of an exclamation, spoken louder and with a wider pitch range.
     pub exclaimed: bool,
     /// The last accented vowel of an exclamation, which gets the most
@@ -298,6 +311,7 @@ impl Segment {
             in_phrase_final_syllable: false,
             in_clause_final_syllable: false,
             accented: false,
+            accent: WordAccent::Full,
             exclaimed: false,
             emphasized: false,
             phrase,
@@ -436,6 +450,7 @@ pub fn segments(phrases: &[Phrase]) -> Vec<Segment> {
                     in_phrase_final_syllable: last_word && final_syllable,
                     in_clause_final_syllable: last_word && final_syllable && phrase.boundary.has_pause(),
                     accented: phoneme.is_vowel() && stress == Stress::Primary,
+                    accent: word.accent,
                     written: word.written.get(i).copied().unwrap_or_default(),
                     ..Segment::pause(None, phrase_index)
                 });

@@ -9,7 +9,7 @@ It ships as an add-on for the NVDA screen reader, as a Windows library (klattara
 - A cascade and parallel formant synthesizer after Klatt (1980), with the voicing source, spectral tilt and pitch flutter of Klatt and Klatt (1990), and creaky voice.
 - Intelligibility at fast rates comes first. Speech is compressed evenly, so every timing relation within and between sounds is kept, and pauses shrink faster than speech does.
 - Pronunciation from the CMU Pronouncing Dictionary, about 135,000 words, with a hand-written list of common modern words and names that it lacks or gets wrong ("YouTube", "email", "Nietzsche"). Words in neither go to a letter-to-sound model trained on the same dictionary, helped by common endings and by compounds of known words.
-- Klatt's (1979) duration rules, a pitch contour for each phrase, and smooth formant movement between sounds. That includes flapped T and D ("butter"), syllabic L and N ("bottle", "button"), a glottal catch on T at the end of a syllable ("bat now", "button"), a soft R after vowels, vowels pulled back before a dark L ("fill", "bell", "fool"), and front K and G before front vowels ("key", "geese").
+- Klatt's (1979) duration rules, SharpVox's Fujisaki pitch model for each phrase, and smooth formant movement between sounds. That includes flapped T and D ("butter"), syllabic L and N ("bottle", "button"), a glottal catch on T at the end of a syllable ("bat now", "button"), a soft R after vowels, vowels pulled back before a dark L ("fill", "bell", "fool"), and front K and G before front vowels ("key", "geese").
 - Text normalization for everyday reading:
   - Numbers, including ordinals, decimals, fractions and phone numbers.
   - Money in dollars, pounds, euros and yen, with scales ("$5M", "$10bn") and other countries' dollars ("US$", "A$").
@@ -20,7 +20,7 @@ It ships as an add-on for the NVDA screen reader, as a Windows library (klattara
   - Greek letters, web and email addresses ("Games.com", "name@example.com"), and British spellings.
 - Homographs are chosen by context: "lead" the metal or the verb, "read" in the present or the past, "Polish" or "polish".
 - Optional phrase prediction, as in Eloquence: long sentences without commas are broken into phrases, each with its own pitch contour.
-- Three voices: Steve, the default, Brittany, and Gary, a deep, giant voice. Each voice has a gender, which chooses its model of the vocal tract. Brittany's vowels come from measurements of women's speech, not from raising Steve's pitch (Hillenbrand and others 1995). The voices are defined in src/engine/src/voicedefs.rs.
+- Five voices: Steve, the default, Brittany, Gary, a deep, giant voice, David, a frail, breathy older man, and Taylor, a child. NVDA and KlattPad show their full names, Standard Steve, Breezy Brittany, Giant Gary, Delicate David and Tiny Taylor, and commands and programs use the short ones. Each voice has a gender, which chooses its model of the vocal tract. Brittany's vowels come from measurements of women's speech, not from raising Steve's pitch (Hillenbrand and others 1995). The voices are defined in src/engine/src/voicedefs.rs.
 - Phoneme input, as in DECtalk: a command in the text lets you write a word's sounds in ARPAbet in among ordinary words.
 - Singing, as in DECtalk: any sound can have a written length and pitch, with notes from C2 to C5 sung with vibrato, or a pitch in Hz with none.
 - Commands in the text, as in DECtalk, to change voice, to customize a voice's pitch, inflection, head size, roughness and breathiness, and to set the speed, volume and vibrato.
@@ -40,10 +40,10 @@ The add-on needs NVDA 2025.1 or later, on Windows 10 or later. It works in both 
 
 You find these in NVDA's Voice settings, opened with NVDA+Control+V.
 
-1. Voice: Steve, the default, Brittany or Gary. Each voice's pitch and inflection are stored with it, so choosing a voice sets those two sliders to that voice's values. A change you make to them lasts until you choose another voice.
+1. Voice: Standard Steve, the default, Breezy Brittany, Giant Gary, Delicate David or Tiny Taylor. Each voice's pitch and inflection are stored with it, so choosing a voice sets those two sliders to that voice's values. A change you make to them lasts until you choose another voice.
 2. Rate: 15 is the normal rate, about 190 words per minute. 41 or 42 is about 430 words per minute, the fastest rate where Klattara has tested clearest so far. The slider goes up to about 950 words per minute, so there is no separate rate boost.
-3. Pitch: 14 is Steve's own pitch, 110 Hz, 33 is Brittany's, 210 Hz, and 7 is Gary's, 78 Hz.
-4. Inflection: 40, normal pitch movement, is the value of both voices. Set it to 0 for a monotone.
+3. Pitch: 14 is Steve's own pitch, 110 Hz, 33 is Brittany's, 210 Hz, 7 is Gary's, 78 Hz, 19 is David's, 138 Hz, and 45 is Taylor's, 270 Hz.
+4. Inflection: 40, normal pitch movement, is Steve's and Brittany's, 34 is Gary's, 32 is David's and 46 is Taylor's. Set it to 0 for a monotone.
 5. Expand abbreviations: checked by default. When checked, "Dr." is read "doctor" and "Calif." is read "California". When unchecked, abbreviations are read as written: spelled out when they have no vowel, and sounded out when they do.
 6. Phrase prediction: unchecked by default, as most screen reader users prefer. When checked, a long sentence without commas is broken into phrases where a reader would break it, such as before "which" or "toward": the pitch falls a little and starts afresh, with no pause. It can make long sentences in documents easier to follow.
 
@@ -80,14 +80,15 @@ On 32-bit Windows, the functions and the audio callback use the C calling conven
 - `klattara_destroy(engine)` frees an engine.
 - `klattara_voice_count()` returns how many voices there are. They are numbered from 0, and the first is the default.
 - `klattara_voice_name(index)` returns a voice's name as a constant string, or NULL if there is no such voice.
+- `klattara_voice_full_name(index)` returns the name to show people, such as "Giant Gary", in the same way. Commands use the short name.
 - `klattara_voice_pitch(index)` returns a voice's base pitch in Hz, or 0 if there is no such voice.
 - `klattara_voice_inflection(index)` returns a voice's inflection, or -1 if there is no such voice.
 - `klattara_voice_gender(index)` returns a voice's gender, `KLATTARA_MALE` or `KLATTARA_FEMALE`, or `KLATTARA_INVALID` if there is no such voice.
 - `klattara_set_voice(engine, index)` changes to a voice: its gender, pitch, inflection and voice quality. Rate, volume and how text is read stay as they are.
 - `klattara_set_gender(engine, gender)` sets which model of the vocal tract the current voice uses, for making a voice of your own. Nothing else changes, so set the pitch as well.
 - `klattara_set_rate(engine, rate)` sets the speaking rate. 1.0 is normal and 2.0 twice as fast. The range is 0.25 to 8.
-- `klattara_set_pitch(engine, hz)` sets the base pitch, 40 to 550 Hz. Each voice has its own default, 110 for Steve, 210 for Brittany and 78 for Gary.
-- `klattara_set_inflection(engine, inflection)` sets the pitch movement, from 0 for a monotone through 1 for normal, up to 2.5. Each voice has its own default, 1 for both Steve and Brittany and 0.85 for Gary.
+- `klattara_set_pitch(engine, hz)` sets the base pitch, 40 to 550 Hz. Each voice has its own default, 110 for Steve, 210 for Brittany, 78 for Gary, 138 for David and 270 for Taylor.
+- `klattara_set_inflection(engine, inflection)` sets the pitch movement, from 0 for a monotone through 1 for normal, up to 2.5. Each voice has its own default, 1 for both Steve and Brittany, 0.85 for Gary, 0.8 for David and 1.15 for Taylor.
 - `klattara_set_volume(engine, volume)` sets the volume, from 0 for silence through 1 for normal, up to 2.
 - `klattara_set_abbreviations(engine, expand)` reads abbreviations in full when expand is nonzero, which is the default, or as written when it is zero.
 - `klattara_set_phrase_prediction(engine, predict)` breaks long stretches of text without punctuation into phrases when predict is nonzero. It is off by default.
@@ -137,19 +138,35 @@ To change voice, use the voice's first letter or its name:
 - `[:vs]` or `[:voice Steve]`
 - `[:vb]` or `[:voice Brittany]`
 - `[:vg]` or `[:voice Gary]`
+- `[:vd]` or `[:voice David]`
+- `[:vt]` or `[:voice Taylor]`
 
 To customize the voice, use `[:cv]` with any of these settings, in any order, such as `[:cv pi 150 hs 110 br 40]`:
 
 1. `pi`, average pitch: 40 to 550 Hz.
 2. `in`, inflection: 0 to 250 percent of normal pitch movement, where 0 is a monotone and 100 is normal.
-3. `hs`, head size: 64 to 135 percent of normal, starting at 100, or 120 for Gary. A larger head sounds lower and deeper, because its longer vocal tract lowers every resonance by the same share.
-4. `rg`, roughness: 0 to 100, starting at 0, or 8 for Gary. It makes the voice uneven from one pulse to the next.
-5. `br`, breathiness: 0 to 72 dB, the level of breath noise through the voice. Steve and Gary start at 0 and Brittany at 36.
-6. `rc`, richness: 0 to 100 percent. More weakens the lowest harmonics, which sounds thinner and buzzier, and less strengthens them, which sounds fuller and softer. Steve is at 50, Brittany at about 36 and Gary at about 43.
-7. `sm`, smoothness: 0 to 100 percent. More takes the edge off the voice by weakening its high frequencies. Only the voice softens, so at high settings consonants like S stand out more. Steve is at 0, Brittany at 12 and Gary at 8.
+3. `hs`, head size: 64 to 135 percent of normal, starting at 100, or 120 for Gary, 94 for David and 89 for Taylor. A larger head sounds lower and deeper, because its longer vocal tract lowers every resonance by the same share.
+4. `rg`, roughness: 0 to 100, starting at 0, or 8 for Gary and 16 for David. It makes the voice uneven from one pulse to the next.
+5. `br`, breathiness: 0 to 72 dB, the level of breath noise through the voice. Steve and Gary start at 0, Brittany at 36, David at 52 and Taylor at 24.
+6. `rc`, richness: 0 to 100 percent. More weakens the lowest harmonics, which sounds thinner and buzzier, and less strengthens them, which sounds fuller and softer. Steve is at 50, Brittany at about 36, Gary at about 43, David at about 29 and Taylor at about 46.
+7. `sm`, smoothness: 0 to 100 percent. More takes the edge off the voice by weakening its high frequencies. Only the voice softens, so at high settings consonants like S stand out more. Steve is at 0, Brittany at 12, Gary at 8, David at 28 and Taylor at 4.
 8. `ge`, gender: 0 or f for female, and 1 or m for male. It chooses the model of the vocal tract and changes nothing else, so set the pitch as well.
-9. `f4`, `f5` and `f6`, the upper formants: F4 from 2000 to 6000 Hz, F5 from 2500 to 6000 Hz and F6 from 3000 to 9000 Hz. Steve has 3300, 3750 and 4900, Brittany about 3861, 4388 and 5733, and Gary 3400, 3650 and 5600 before his head size lowers them.
-10. `b4`, `b5` and `b6`, their bandwidths: 100 to 4000 Hz each, where wider is duller and narrower rings more. Steve has 250, 200 and 1000, Brittany about 313, 250 and 1250, and Gary 300, 300 and 1000.
+9. `f4`, `f5` and `f6`, the upper formants: F4 from 2000 to 6000 Hz, F5 from 2500 to 6000 Hz and F6 from 3000 to 9000 Hz. Steve has 3300, 3750 and 4900, Brittany about 3861, 4388 and 5733, Gary 3400, 3650 and 5600 before his head size lowers them, David 3450, 4100 and 4900 before his raises them, and Taylor the same as Brittany before theirs does.
+10. `b4`, `b5` and `b6`, their bandwidths: 100 to 4000 Hz each, where wider is duller and narrower rings more. Steve has 250, 200 and 1000, Brittany about 313, 250 and 1250, Gary 300, 300 and 1000, David 340, 380 and 1000, and Taylor the same as Brittany before head size.
+11. `fl`, flutter: 0 to 100 percent. More makes the pitch waver, slowly and unevenly, as a shaky voice does, and 0 holds it steady. David is at 60 and the other voices at 25. It follows inflection up to normal, so a monotone has none.
+12. `vvl`, `fvl`, `avl` and `nvl`, how loud each kind of sound is: 0 to 200 percent of normal, where 100 is normal, 50 is about 6 dB quieter, 200 about 6 dB louder and 0 is off. Every voice starts at 100.
+    - `vvl`, voicing: vowels and everything else the vocal folds sound, including M, N and NG. With it at 0, a voice's breath is left, so `[:cv vvl 0 br 60]` whispers.
+    - `fvl`, frication: the hiss of S, SH and F, and the bursts of stops like T and K.
+    - `avl`, aspiration: H, and the puff of air after P, T and K. The breath of a breathy voice is `br` instead.
+    - `nvl`, nasals: M, N and NG only, and vowels stay as they are. This one comes on top of `vvl`.
+13. `fa`, baseline fall, DECtalk's `bf`: 0 to 90. How far the pitch's baseline falls through each phrase, and 0 is flat. Steve is at 18, Brittany 12, Gary 10, David 8 and Taylor 5.
+14. `ha`, hat rise, DECtalk's `hr`: 0 to 100. How high the slow rise over each phrase goes, and 0 is none. Steve is at 18, Brittany 16, Gary 22, David 14 and Taylor 20.
+15. `st`, stress rise, DECtalk's `sr`: 0 to 100. How large the accent on each stressed word is, and 0 is none, which sounds close to a monotone. Steve is at 32, Brittany 36, Gary 26, David 20 and Taylor 42.
+16. `qk`, quickness, DECtalk's `qu`: 0 to 100 percent. How quickly the pitch responds, as a larger larynx is slower. Steve is at 40, Brittany 58, Gary 14, David 6 and Taylor 72.
+17. `lx`, lax breathiness, DECtalk's `lx`: 0 to 100 percent. Breath that comes up and softens the voice only at the ends of sentences and just before voiceless sounds, where `br` runs all the way through. Steve is at 0, Brittany 65, Gary 8, David 70 and Taylor 30.
+18. `oq`, open quotient: 20 to 90 percent. How long the vocal folds stay open in each cycle, where more is softer and fuller and less is thinner and buzzier. It sets the same thing as `rc` from the other end, so `oq 55` is `rc 50`, and whichever comes last counts. Steve is at 55, Brittany 65, Gary 60, David 70 and Taylor 58.
+
+The numbers for `fa`, `ha` and `st` are on DECtalk's scale, where Steve has the values of its Perfect Paul. They aren't literal Hz, because pitch moves in proportion to each voice: `fa 18` is about 2 semitones on any voice, which is about 13 Hz on Steve.
 
 F1 to F3 change with every sound, so they have no settings. F4 to F6 stay put, which gives a voice much of its character. A value you set is that many Hz on either gender's model, and head size still moves it: `[:cv f4 4000 hs 125]` puts F4 at 3200. F6 is the value on most sounds, and the sharp sounds that raise it, such as S, rise by the same share, so `f6` also changes how sharp S sounds. Formants set close together add up and get louder: F4 and F5 both at 2600 Hz are nearly 6 dB louder and start to distort, and `volume` brings that back down.
 
@@ -271,7 +288,7 @@ The tools in src/tools measure how clear the voice is, using a speech recognizer
 2. Each word's pronunciation comes from the dictionary or a homograph rule. A word the dictionary lacks is built from its stem if it has a common ending ("rebooted"), or else goes to the letter-to-sound model, whose main stress is checked against a table of word endings ("relegation"). If the model is unsure of a word, and it is made of two known words ("webcam"), it is said as those two words. Endings like -s and -ed are marked, since they change how the word is timed. Each word keeps a single main stress. A compound stresses its first part ("MIcrosoft"), and words like "nineteen" and "outside" follow the rhythm of the sentence ("she's nineTEEN", "NINEteen EIGHty").
 3. The sounds are grouped into syllables, and each takes the right variant for its position, such as an aspirated, a flapped or a glottalized T. Before a glottalized T, the voice turns creaky, lower and uneven, as most American speakers' voices do (Garellek and Seyfarth 2016).
 4. Klatt's duration rules set each sound's length from its stress, its place in the word and phrase, and its neighbors. Punctuation sets the pauses: a comma or parenthesis is the shortest, a semicolon, colon or dash is twice that, and the end of a sentence three times. The whole timeline is then compressed to the speaking rate, and the pauses shrink together, so they stay apart at any speed.
-5. A pitch contour is laid over each phrase, with accents on stressed words and a rise or fall at the end that depends on the punctuation. Each accent is a little lower than the one before, but never less than half height, so long sentences don't flatten out. Following Bell Labs' accent rules (Hirschberg 1993), words that only link clauses, such as "which" in mid-sentence or "because", get no accent, and neither does a word mentioned before ("buy a DOG, but I'm allergic to dogs"), unless it is a name or a number. Questions that start with a question word, such as "What time is it?", fall like statements, as most do in American speech; other questions rise.
+5. A pitch contour is laid over each phrase, using the intonation model of SharpVox. Two filters make the shape, in the manner of Fujisaki and Hirose (1984): a slow rise and fall over the phrase, and a quicker step up and down for each accented word. The last stressed word carries the main accent, and earlier ones a smaller one, smaller again for one-syllable words and for light words like "get" or "very". The baseline declines through each phrase, and phrases after a comma sit lower. A statement falls from its main accent to its end, while a comma and a yes-no question rise on their last vowel. Each sound also nudges the pitch a little: high vowels and voiceless consonants lift it, and nasals and voiced consonants lower it. The voice's pitch is the average of each phrase. At fast rates, the rises and falls speed up with the speech. Following Bell Labs' accent rules (Hirschberg 1993), words that only link clauses, such as "which" in mid-sentence or "because", get no accent, and neither does a word mentioned before ("buy a DOG, but I'm allergic to dogs"), unless it is a name or a number. Questions that start with a question word, such as "What time is it?", fall like statements, as most do in American speech; other questions rise.
 6. Each sound has targets for the formants, the resonances of the vocal tract. Smooth transitions join the targets, so the resonances glide from one sound to the next. A female voice takes each target from a table of its own, because a shorter vocal tract is not simply the same one scaled: women's first formant is 7 to 29 percent higher than men's, depending on the vowel.
 7. The formant synthesizer turns these tracks into audio: a glottal pulse and noise sources shaped by a chain of resonators.
 
@@ -292,7 +309,9 @@ The tools in src/tools measure how clear the voice is, using a speech recognizer
 - The Wikipedia Homograph Data, by Kyle Gorman, Gleb Mazovetskiy and Vitaly Nikolaev, under the Apache 2.0 license. The homograph table is built from it.
 - Wikidata, dedicated to the public domain under CC0. The names of monarchs and popes that take a numbered title ("Henry VIII") come from it.
 - NV Access, for NVDA and its source code, which the add-on is written against.
-- TGSpeechBox, by Tamas Geczy, for the idea of weaker coarticulation in fast speech, which makes consonants clearer.
+- SharpVox, by ByteSizedFox, under the MIT license. Klattara's pitch model is ported from it, with changes listed at the top of src/engine/src/intonation.rs.
+- TGSpeechBox, by Tamas Geczy, under the MIT license, where SharpVox ported its pitch filters from, and for the idea of weaker coarticulation in fast speech, which makes consonants clearer.
+- Hiroya Fujisaki and Keikichi Hirose, whose 1984 model those filters come from, Fujisaki and Sumio Ohno, who fitted it to English in 1995, and Anthony C. Bartman, for the version of it made of two filters.
 
 The full license texts for the included data are in THIRD-PARTY-NOTICES.txt.
 

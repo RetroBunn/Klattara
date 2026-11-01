@@ -25,10 +25,53 @@ pub enum Gender {
     Female,
 }
 
+/// How loud each kind of sound is, as a share of normal: 1 is normal and 0 is off.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SourceGains {
+    /// Voicing: vowels and everything else the vocal folds sound.
+    pub voicing: f64,
+    /// Frication: the hiss of S and F, and the bursts of stops.
+    pub frication: f64,
+    /// Aspiration: H, and the puff of air after P, T and K. The breath that runs through
+    /// a breathy voice has a setting of its own.
+    pub aspiration: f64,
+    /// The nasal consonants M, N and NG.
+    pub nasal: f64,
+}
+
+impl SourceGains {
+    pub const NORMAL: SourceGains = SourceGains { voicing: 1.0, frication: 1.0, aspiration: 1.0, nasal: 1.0 };
+}
+
+/// How a voice moves its pitch: the settings of DECtalk's that are named bf, hr, sr and qu,
+/// on its scale, where these normal values are those of its Perfect Paul. They aren't quite
+/// Hz here, since pitch moves here in proportion to the voice's own: `baseline_fall` at 18
+/// is about 13 Hz at Steve's pitch, and about 2 semitones at any other.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PitchShape {
+    /// How far the baseline falls through a phrase, half of it above the middle and half
+    /// below. 0 is flat.
+    pub baseline_fall: f64,
+    /// How high the slow rise over each phrase goes. 0 is none.
+    pub hat_rise: f64,
+    /// How large the accent on each stressed word is. 0 is none.
+    pub stress_rise: f64,
+    /// How quickly the pitch responds, as a percentage. A larger larynx is slower.
+    pub quickness: f64,
+}
+
+impl PitchShape {
+    pub const NORMAL: PitchShape =
+        PitchShape { baseline_fall: 18.0, hat_rise: 18.0, stress_rise: 32.0, quickness: 40.0 };
+}
+
 /// One voice.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VoiceDef {
+    /// The name that commands and programs use.
     pub name: &'static str,
+    /// The name to show people, in the style of DECtalk's "Perfect Paul".
+    pub full_name: &'static str,
     pub gender: Gender,
     /// Base pitch, Hz.
     pub pitch: f64,
@@ -50,6 +93,13 @@ pub struct VoiceDef {
     pub upper_formants: [Option<f64>; 3],
     /// Their bandwidths, as in [`crate::Voice::upper_bandwidths`].
     pub upper_bandwidths: [Option<f64>; 3],
+    /// How loud each kind of sound is, as in [`crate::Voice::gains`].
+    pub gains: SourceGains,
+    /// Breath at the ends of sentences and before voiceless sounds, as in
+    /// [`crate::Voice::lax_breathiness`].
+    pub lax_breathiness: f64,
+    /// How the voice moves its pitch.
+    pub pitch_shape: PitchShape,
     /// Slow pitch wobble, as in [`crate::VoiceSettings::flutter`].
     pub flutter: f64,
     /// Output gain, which brings the voice to the level of the others. 1 is none.
@@ -65,6 +115,7 @@ pub const VOICES: &[VoiceDef] = &[
     // chose this brighter tone by ear.
     VoiceDef {
         name: "Steve",
+        full_name: "Standard Steve",
         gender: Gender::Male,
         pitch: 110.0,
         inflection: 1.0,
@@ -75,6 +126,9 @@ pub const VOICES: &[VoiceDef] = &[
         roughness: 0.0,
         upper_formants: [None; 3],
         upper_bandwidths: [None; 3],
+        gains: SourceGains::NORMAL,
+        lax_breathiness: 0.0,
+        pitch_shape: PitchShape::NORMAL,
         flutter: 25.0,
         level: 1.0,
     },
@@ -83,6 +137,7 @@ pub const VOICES: &[VoiceDef] = &[
     // voice had a prominent first harmonic.
     VoiceDef {
         name: "Brittany",
+        full_name: "Breezy Brittany",
         gender: Gender::Female,
         pitch: 210.0,
         inflection: 1.0,
@@ -93,6 +148,12 @@ pub const VOICES: &[VoiceDef] = &[
         roughness: 0.0,
         upper_formants: [None; 3],
         upper_bandwidths: [None; 3],
+        gains: SourceGains::NORMAL,
+        // Lively and relaxed: a small fall through each phrase, taller accents, the quick
+        // larynx of a smaller voice, and breath as her sentences end. Her rise over each
+        // phrase is a little smaller, so that the accents carry the movement.
+        lax_breathiness: 65.0,
+        pitch_shape: PitchShape { baseline_fall: 12.0, hat_rise: 16.0, stress_rise: 36.0, quickness: 58.0 },
         flutter: 25.0,
         // More pulses per second carry more power: 1.9 dB more than Steve.
         level: 0.8,
@@ -108,6 +169,7 @@ pub const VOICES: &[VoiceDef] = &[
     // chosen for its character, and is for the ear to judge.
     VoiceDef {
         name: "Gary",
+        full_name: "Giant Gary",
         gender: Gender::Male,
         pitch: 78.0,
         inflection: 0.85,
@@ -118,9 +180,81 @@ pub const VOICES: &[VoiceDef] = &[
         roughness: 8.0,
         upper_formants: [Some(3400.0), Some(3650.0), Some(5600.0)],
         upper_bandwidths: [Some(300.0), Some(300.0), None],
+        gains: SourceGains::NORMAL,
+        // A large larynx responds slowly, so his pitch moves heavily: a broad rise over each
+        // phrase, with smaller accents on top of it. His folds stay tense, so he has very
+        // little lax breath, and a steady voice falls little through a phrase.
+        lax_breathiness: 8.0,
+        pitch_shape: PitchShape { baseline_fall: 10.0, hat_rise: 22.0, stress_rise: 26.0, quickness: 14.0 },
         flutter: 25.0,
         // Fewer pulses per second carry less power.
         level: 1.08,
+    },
+    // A frail older man, the same idea as DECtalk's Frail Frank, built its own way. Men's
+    // speaking pitch rises again in old age (Hollien and Shipp 1972), so he is above Steve
+    // at 138 Hz, though below Frank's 155. His vocal folds no longer close firmly, so the
+    // open quotient is long and breath runs through the voice. Against Frank, he has less
+    // spectral tilt (7 dB to about 12), which keeps consonants from standing out too much,
+    // and a head nearer normal (94% to 90%), with F4 and F5 lower and further apart. The
+    // resonances are wide and damped, as leaking breath makes them. Most his own is the
+    // shake: flutter of 60 where the others have 25, and more roughness than Frank's slight
+    // creak, for a voice that wavers. All this is chosen for its character, and is for the
+    // ear to judge. He is as loud as the others, since a screen reader's voices must be, so his
+    // weakness is in the sound and not the level.
+    VoiceDef {
+        name: "David",
+        full_name: "Delicate David",
+        gender: Gender::Male,
+        pitch: 138.0,
+        inflection: 0.8,
+        open_quotient: 0.7,
+        tilt: 7.0,
+        breathiness: 52.0,
+        head_size: 94.0,
+        roughness: 16.0,
+        upper_formants: [Some(3450.0), Some(4100.0), None],
+        upper_bandwidths: [Some(340.0), Some(380.0), None],
+        gains: SourceGains::NORMAL,
+        // The weakest and slowest movement of all: he doesn't have the strength for large
+        // rises, his larynx is sluggish, and his voice gives out in breath at the ends of
+        // sentences and before voiceless sounds.
+        lax_breathiness: 70.0,
+        pitch_shape: PitchShape { baseline_fall: 8.0, hat_rise: 14.0, stress_rise: 20.0, quickness: 6.0 },
+        flutter: 60.0,
+        // Breath and a soft source take some power, and his pitch gives some back.
+        level: 1.0,
+    },
+    // A child, the same idea as DECtalk's Kit the Kid, built its own way, and on the female
+    // model of the vocal tract as Kit is, since a child's is closer to a woman's. The
+    // children of Hillenbrand et al. (1995), aged 10 to 12, are close to women: 7% higher in
+    // pitch at 234 Hz, and 8% in formants, the same as a head size of 93. A voice with only
+    // that would be close to Brittany, so this is about 8 to 10, Kit's age, further the same
+    // way. Against
+    // Kit, a little lower (270 Hz to 306) and with F4 and F5 in place, where Kit has none.
+    // Children's folds are small and quick and their speech is lively, so the pitch moves
+    // more than anyone's, and it falls least through a phrase. They have a little breath, and
+    // the brightest source of the voices after Steve. All this is chosen for its
+    // character, and is for the ear to judge. Children's /u/ is further forward than this
+    // model makes it: F2 is 25% above women's in the data, where the model raises it 12%.
+    VoiceDef {
+        name: "Taylor",
+        full_name: "Tiny Taylor",
+        gender: Gender::Female,
+        pitch: 270.0,
+        inflection: 1.15,
+        open_quotient: 0.58,
+        tilt: 1.0,
+        breathiness: 24.0,
+        head_size: 89.0,
+        roughness: 0.0,
+        upper_formants: [None; 3],
+        upper_bandwidths: [None; 3],
+        gains: SourceGains::NORMAL,
+        lax_breathiness: 30.0,
+        pitch_shape: PitchShape { baseline_fall: 5.0, hat_rise: 20.0, stress_rise: 42.0, quickness: 72.0 },
+        flutter: 25.0,
+        // More pulses per second carry more power, as with Brittany.
+        level: 0.75,
     },
 ];
 
@@ -214,6 +348,33 @@ mod tests {
         }
         assert_eq!(find_voice("BRITTANY").map(|v| v.pitch), Some(210.0));
         assert_eq!(find_voice("nobody"), None);
+    }
+
+    #[test]
+    fn each_voice_moves_its_pitch_its_own_way_and_steve_is_the_normal_one() {
+        assert_eq!(VOICES[0].pitch_shape, PitchShape::NORMAL);
+        assert_eq!(VOICES[0].lax_breathiness, 0.0);
+        for (i, voice) in VOICES.iter().enumerate() {
+            for other in &VOICES[..i] {
+                let (a, b) = (voice.pitch_shape, other.pitch_shape);
+                assert_ne!(a.baseline_fall, b.baseline_fall, "{} {}", voice.name, other.name);
+                assert_ne!(a.hat_rise, b.hat_rise, "{} {}", voice.name, other.name);
+                assert_ne!(a.stress_rise, b.stress_rise, "{} {}", voice.name, other.name);
+                assert_ne!(a.quickness, b.quickness, "{} {}", voice.name, other.name);
+                assert_ne!(voice.lax_breathiness, other.lax_breathiness, "{} {}", voice.name, other.name);
+            }
+        }
+    }
+
+    #[test]
+    fn full_names_end_in_the_name_and_start_with_its_letter() {
+        for voice in VOICES {
+            let (first, last) = voice.full_name.split_once(' ').unwrap();
+            assert_eq!(last, voice.name);
+            assert_eq!(first.chars().next(), voice.name.chars().next(), "{}", voice.full_name);
+        }
+        // A full name is for showing, and commands don't know it.
+        assert_eq!(find_voice("Giant Gary"), None);
     }
 
     #[test]

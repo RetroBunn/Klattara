@@ -164,7 +164,7 @@ fn build_menus() -> (HMENU, Menus) {
     item(speech, ID_STOP, "&Stop\tF7");
     separator(speech);
     for (index, def) in VOICES.iter().enumerate() {
-        item(voice, ID_FIRST_VOICE + index as u16, &format!("&{}", def.name));
+        item(voice, ID_FIRST_VOICE + index as u16, &format!("&{}", def.full_name));
     }
     submenu(speech, voice, "&Voice");
 
@@ -785,7 +785,7 @@ pub fn run() {
         // As long as text can be: the default is about 32,000 characters.
         send(edit, EM_SETLIMITTEXT, 0, 0);
         for def in VOICES {
-            send(voice_box, CB_ADDSTRING, 0, wide(def.name).as_ptr() as isize);
+            send(voice_box, CB_ADDSTRING, 0, wide(def.full_name).as_ptr() as isize);
         }
         for (slider, position) in [(rate, NORMAL_RATE_POSITION), (volume, FULL_VOLUME_POSITION)] {
             send(slider, TBM_SETRANGE, 1, 100 << 16);

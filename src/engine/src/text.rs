@@ -14,7 +14,7 @@ use crate::lexicon::{self, Pronunciation};
 use crate::lts;
 use crate::numbers;
 use crate::phoneme::{Phoneme, Stress};
-use crate::utterance::{Boundary, Phrase, Word, close_phrase};
+use crate::utterance::{Boundary, Phrase, Word, WordAccent, close_phrase};
 use std::collections::HashSet;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -358,6 +358,37 @@ pub const FUNCTION_WORDS: &[&str] = &[
     "shall", "she", "should", "than", "the", "their", "them", "they", "through", "till", "to", "toward", "towards",
     "under", "until", "upon", "us", "was", "we", "were", "will", "with", "within", "without", "would", "you", "your",
 ];
+
+/// Words that keep their stress and sound, but take no pitch accent: those that SharpVox
+/// counts as function words and that [`FUNCTION_WORDS`] doesn't. Sorted.
+const UNACCENTED_WORDS: &[&str] = &[
+    "although", "because", "here", "no", "not", "off", "ought", "out", "over", "since", "so", "that", "there",
+    "though", "up", "when", "while", "yet",
+];
+
+/// Light verbs, quantifiers and adverbs of degree, which readers usually accent weakly:
+/// SharpVox's list. Sorted.
+const LIGHT_WORDS: &[&str] = &[
+    "all", "almost", "also", "any", "both", "came", "come", "comes", "coming", "each", "enough", "even", "every",
+    "gave", "get", "gets", "getting", "give", "given", "gives", "go", "goes", "going", "gone", "got", "gotten", "just",
+    "keep", "keeps", "kept", "let", "lets", "made", "make", "makes", "making", "many", "more", "most", "much", "only",
+    "own", "put", "puts", "quite", "rather", "really", "some", "still", "such", "take", "taken", "takes", "taking",
+    "these", "this", "those", "took", "very", "went",
+];
+
+/// What pitch accent a word can carry. At the end of a phrase it keeps its accent: "I
+/// said no."
+fn word_accent(word: &str, stranded: bool) -> WordAccent {
+    if stranded {
+        WordAccent::Full
+    } else if UNACCENTED_WORDS.binary_search(&word).is_ok() {
+        WordAccent::Unaccented
+    } else if LIGHT_WORDS.binary_search(&word).is_ok() {
+        WordAccent::Light
+    } else {
+        WordAccent::Full
+    }
+}
 
 /// Reduced forms that function words take in running speech.
 const WEAK_FORMS: &[(&str, &str)] = &[
@@ -1082,7 +1113,8 @@ fn finish(written: &[Written], past_sentence: bool, mentioned: &mut HashSet<Stri
             }
         }
         if !phonemes.is_empty() {
-            words.push(Word { written: Vec::new(), ending: has_ending(&word.text, &phonemes), phonemes });
+            let accent = word_accent(&word.text, stranded);
+            words.push(Word { written: Vec::new(), accent, ending: has_ending(&word.text, &phonemes), phonemes });
         }
     }
     // A phrase needs an accent: give the last repeated word its own back.
@@ -1127,7 +1159,7 @@ pub fn spelled_phrases(text: &str) -> Vec<Phrase> {
         } else {
             continue;
         };
-        words.push(Word { phonemes, ending: false, written: Vec::new() });
+        words.push(Word { phonemes, accent: WordAccent::Full, ending: false, written: Vec::new() });
     }
     let mut phrases = Vec::new();
     close_phrase(&mut phrases, &mut words, Boundary::Period);
@@ -1770,7 +1802,12 @@ mod tests {
     fn handles_suffixes_on_known_words() {
         // Possessives and inflections of dictionary words.
         let klatt = notation(&[Phrase {
-            words: vec![Word { written: Vec::new(), phonemes: with_suffix("dogs").unwrap(), ending: false }],
+            words: vec![Word {
+                written: Vec::new(),
+                accent: WordAccent::Full,
+                phonemes: with_suffix("dogs").unwrap(),
+                ending: false,
+            }],
             boundary: Boundary::Period,
         }]);
         assert!(klatt.ends_with("G Z]."), "{klatt}");
@@ -1791,6 +1828,21 @@ mod tests {
         }
         // The adjective has its stress on the second syllable.
         assert_eq!(say("an august body"), "[AH0 N] [AA2 G AH1 S T] [B AA1 D IY0].");
+    }
+
+    #[test]
+    fn words_are_classed_for_their_pitch_accents() {
+        assert!(UNACCENTED_WORDS.windows(2).all(|w| w[0] < w[1]));
+        assert!(LIGHT_WORDS.windows(2).all(|w| w[0] < w[1]));
+        let accents = |text: &str| -> Vec<WordAccent> {
+            phrases_with(text, true, false).iter().flat_map(|p| p.words.iter().map(|w| w.accent)).collect()
+        };
+        use WordAccent::{Full, Light, Unaccented};
+        assert_eq!(accents("Dogs get very hungry."), [Full, Light, Light, Full]);
+        assert_eq!(accents("Not when it rains."), [Unaccented, Unaccented, Full, Full]);
+        // The last word of a phrase keeps its accent.
+        assert_eq!(accents("I said no."), [Full, Full, Full]);
+        assert_eq!(accents("I got it, then went there."), [Full, Light, Full, Full, Light, Full]);
     }
 
     #[test]
@@ -1838,7 +1890,7 @@ mod tests {
     fn compounds_only_where_the_model_is_unsure() {
         let compound_sounds = |word: &str, shortest: usize, related: usize| {
             let phrase = |phonemes| Phrase {
-                words: vec![Word { phonemes, ending: false, written: Vec::new() }],
+                words: vec![Word { phonemes, accent: WordAccent::Full, ending: false, written: Vec::new() }],
                 boundary: Boundary::Period,
             };
             compound(word, shortest, related).map(|phonemes| notation(&[phrase(phonemes)]))

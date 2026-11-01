@@ -46,4 +46,4 @@ pub use speech::{
 };
 pub use synth::{Synth, VoiceSettings};
 pub use utterance::ParseError;
-pub use voicedefs::{Gender, VOICES, VoiceDef, find_voice};
+pub use voicedefs::{Gender, PitchShape, SourceGains, VOICES, VoiceDef, find_voice};

@@ -14,3 +14,5 @@ __pycache__/
 /eval
 # TGSpeechBox, a separate repository, kept for reference.
 /TGSpeechBox
+# SharpVox, a separate repository, kept here for reference.
+/sharpVoxTTS

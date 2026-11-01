@@ -60,10 +60,12 @@ void KLATTARA_CALL klattara_destroy(KlattaraEngine *engine);
 
 /* The voices are numbered from 0; the first is the default. These give how
  * many there are, and each one's name as a constant string (NULL if there is no
- * such voice), base pitch in Hz (0 if none), inflection (-1 if none) and gender
+ * such voice), full name for showing to people, such as "Giant Gary" (NULL if
+ * none), base pitch in Hz (0 if none), inflection (-1 if none) and gender
  * (KLATTARA_INVALID if none). */
 int KLATTARA_CALL klattara_voice_count(void);
 const char *KLATTARA_CALL klattara_voice_name(int index);
+const char *KLATTARA_CALL klattara_voice_full_name(int index);
 double KLATTARA_CALL klattara_voice_pitch(int index);
 double KLATTARA_CALL klattara_voice_inflection(int index);
 int KLATTARA_CALL klattara_voice_gender(int index);
@@ -129,6 +131,17 @@ int KLATTARA_CALL klattara_set_phrase_prediction(KlattaraEngine *engine, int pre
  *     f4  F4, 2000 to 6000 Hz        b4  its bandwidth, 100 to 4000 Hz
  *     f5  F5, 2500 to 6000 Hz        b5  its bandwidth, 100 to 4000 Hz
  *     f6  F6, 3000 to 9000 Hz        b6  its bandwidth, 100 to 4000 Hz
+ *     fl  flutter, 0 to 100 percent, how much the pitch wavers
+ *     vvl voicing, 0 to 200 percent of normal, 0 is off
+ *     fvl frication, the hiss of S and F and the bursts of stops, the same
+ *     avl aspiration, H and the puff after P, T and K, the same
+ *     nvl nasals, M, N and NG, the same
+ *     fa  baseline fall through a phrase, 0 to 90, 18 is normal (DECtalk's bf)
+ *     ha  hat rise, the slow rise over a phrase, 0 to 100, 18 is normal (hr)
+ *     st  stress rise, the size of each accent, 0 to 100, 32 is normal (sr)
+ *     qk  quickness of the pitch, 0 to 100 percent, 40 is normal (qu)
+ *     lx  lax breathiness, 0 to 100 percent, breath at the ends of sentences
+ *     oq  open quotient, 20 to 90 percent, another way to set what rc sets
  * Changing voice replaces all of these with that voice's own. These don't depend on
  * the voice:
  *   [:speed 400] or [:spd 400]  speed, 38 to 1796 words per minute on ordinary text

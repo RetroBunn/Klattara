@@ -20,7 +20,7 @@ use crate::phonetics::{CODA_R, DEFAULT_F6, FRONT_VELAR, NASALIZED_ZERO, OR_NUCLE
 use crate::singing::{VIBRATO_FADE, is_note};
 use crate::speech::Voice;
 use crate::synth::Synth;
-use crate::utterance::{Segment, syllabic_consonant};
+use crate::utterance::{Boundary, Segment, syllabic_consonant};
 use crate::voicedefs::Gender;
 
 /// How long before the release a voiced stop's voicing resumes when it
@@ -58,6 +58,17 @@ const CREAK_LEAD: f64 = 90.0;
 const CREAK_SHARE: f64 = 0.7;
 const CREAK_AFTER: f64 = 0.5;
 const CREAK_FADE: f64 = 20.0;
+/// Lax breathiness, as in DECtalk's lx: as the folds relax, aspiration comes up through
+/// the voicing and the voice's high frequencies fall away. At full strength, it takes this
+/// many ms to arrive, rising from the first level to the first plus the second, in dB, and
+/// the tilt rises by [`LAX_TILT`] dB. Only while voicing is above [`LAX_MIN_VOICING`] dB.
+const LAX_RISE: f64 = 84.0;
+const LAX_BREATH_START: f64 = 30.0;
+const LAX_BREATH_RISE: f64 = 27.0;
+const LAX_TILT: f64 = 16.0;
+const LAX_MIN_VOICING: f64 = 40.0;
+/// Before a voiceless sound, never more than this share of the voiced sound.
+const LAX_SHARE: f64 = 0.7;
 /// How far a dark L pulls /ɪ/ and /ɛ/ down and back: F1 rises by this many Hz
 /// and F2 shrinks to this share. With their usual targets, "fill" stood too
 /// close to "feel", and F2's plunge to the L blurred them both. Ten pairs like
@@ -339,12 +350,24 @@ fn edge_ms(manner: Manner) -> f64 {
     }
 }
 
-/// The steady sound of segment `i` in its context.
-fn steady_sound(segments: &[Segment], i: usize) -> Sound {
+/// A level in dB at this share of normal. Normal leaves it exactly as it is, and
+/// silence stays silent at any share.
+fn scaled(db: f64, share: f64) -> f64 {
+    if share == 1.0 || db <= 0.0 {
+        db
+    } else if share <= 0.0 {
+        0.0
+    } else {
+        (db + 20.0 * share.log10()).max(0.0)
+    }
+}
+
+/// The steady sound of segment `i` in its context, with nasals at this share of normal.
+fn steady_sound(segments: &[Segment], i: usize, nasal: f64) -> Sound {
     let seg = &segments[i];
     // A syllabic N is the nasal murmur, at the level of an unstressed vowel.
     if syllabic_consonant(segments, i) == Some(Phoneme::N) {
-        return Sound { av: 57.0, ..spec(Phoneme::N).sound };
+        return Sound { av: scaled(57.0, nasal), ..spec(Phoneme::N).sound };
     }
     let mut sound = spec(seg.phoneme).sound;
     let after_voicing = i > 0 && segments[i - 1].phoneme.is_voiced();
@@ -362,6 +385,7 @@ fn steady_sound(segments: &[Segment], i: usize) -> Sound {
                 sound.av += 2.0;
             }
         }
+        Manner::Nasal => sound.av = scaled(sound.av, nasal),
         Manner::Stop if seg.phoneme.is_voiced() && after_voicing => sound = VOICE_BAR,
         // Part of the vowel, so nearly as loud as one.
         Manner::Liquid if is_soft_r(segments, i) => sound.av = 59.0,
@@ -370,13 +394,13 @@ fn steady_sound(segments: &[Segment], i: usize) -> Sound {
     sound
 }
 
-fn sound_track(segments: &[Segment]) -> Track<Sound> {
+fn sound_track(segments: &[Segment], nasal: f64) -> Track<Sound> {
     let mut track = Track::new();
     for (i, seg) in segments.iter().enumerate() {
         let (s, e, d) = (seg.start, seg.end(), seg.duration);
         let manner = seg.phoneme.manner();
         let edge = edge_ms(manner).min(d / 2.0);
-        let steady = steady_sound(segments, i);
+        let steady = steady_sound(segments, i, nasal);
         let mut begin = s + edge / 2.0;
 
         // The release of a stop before this segment: burst, then aspiration
@@ -500,6 +524,61 @@ fn creak_track(segments: &[Segment]) -> Track<f64> {
     track
 }
 
+/// How far the folds have relaxed over time, 0 to 1: through the last syllable of a
+/// sentence, from its vowel to the end of its voicing, and at the end of a voiced sound
+/// before a voiceless one. Those are the places DECtalk's manual gives for lax breathiness.
+fn lax_track(segments: &[Segment]) -> Track<f64> {
+    let ends_sentence = |i: usize| {
+        let next_pause = segments[i..].iter().find(|s| s.phoneme == Phoneme::Pause);
+        matches!(
+            next_pause.and_then(|s| s.boundary),
+            Some(Boundary::Period | Boundary::Question | Boundary::WhQuestion | Boundary::Exclamation)
+        )
+    };
+    let mut track = Track::new();
+    track.push(0.0, 0.0);
+    let mut i = 0;
+    while i < segments.len() {
+        let seg = &segments[i];
+        if seg.singing || !seg.phoneme.is_voiced() || seg.phoneme == Phoneme::Pause {
+            i += 1;
+            continue;
+        }
+        if seg.phoneme.is_vowel() && seg.in_clause_final_syllable && ends_sentence(i) {
+            // To the end of the sentence: the voicing gate takes care of what isn't voiced.
+            let last = segments[i..].iter().take_while(|s| s.phoneme != Phoneme::Pause).last().unwrap_or(seg);
+            let arrives = (seg.start + LAX_RISE).min(last.end());
+            track.push(seg.start, 0.0);
+            track.push(arrives, (arrives - seg.start) / LAX_RISE);
+            track.push(last.end(), (arrives - seg.start) / LAX_RISE);
+            track.push(last.end() + 1.0, 0.0);
+            i += segments[i..].iter().take_while(|s| s.phoneme != Phoneme::Pause).count();
+            continue;
+        }
+        let next = segments.get(i + 1);
+        if next.is_some_and(|n| n.phoneme != Phoneme::Pause && !n.phoneme.is_voiced()) {
+            let lead = LAX_RISE.min(LAX_SHARE * seg.duration);
+            track.push(seg.end() - lead, 0.0);
+            track.push(seg.end(), lead / LAX_RISE);
+            track.push(seg.end() + 1.0, 0.0);
+        }
+        i += 1;
+    }
+    track.sort();
+    track
+}
+
+/// Two noise levels in dB, from one noise source, heard together.
+fn added_db(a: f64, b: f64) -> f64 {
+    if a <= 0.0 {
+        b
+    } else if b <= 0.0 {
+        a
+    } else {
+        20.0 * (10f64.powf(a / 20.0) + 10f64.powf(b / 20.0)).log10()
+    }
+}
+
 /// How quickly singing's vibrato and steadiness change, ms: at once, in effect, but
 /// never across the whole gap to the next frame.
 const SINGING_EDGE: f64 = 1.0;
@@ -562,19 +641,25 @@ fn singing_tracks(segments: &[Segment], voice: &Voice) -> (Track<f64>, Track<f64
     (vibrato, steady)
 }
 
-/// Breath noise through voicing at this voice's level: it follows the voicing,
-/// so it fades with it and is gone when the voicing stops.
-fn breath(s: &Sound, breathiness: f64) -> f64 {
-    if breathiness > 0.0 && s.av > 0.0 { s.ah.max(breathiness + s.av - 60.0) } else { s.ah }
+/// Aspiration at this share of normal, or breath noise through voicing at this voice's
+/// level, whichever is stronger. Breath follows the voicing, so it fades with it and is
+/// gone when the voicing stops. It follows the voicing before the voice's gain for
+/// voicing, so that with that off, what is left is a whisper.
+fn breath(s: &Sound, breathiness: f64, aspiration: f64) -> f64 {
+    let ah = scaled(s.ah, aspiration);
+    if breathiness > 0.0 && s.av > 0.0 { ah.max(breathiness + s.av - 60.0) } else { ah }
 }
 
 /// Builds synthesizer frames from timed segments and pitch keyframes, for the
 /// voice's gender and quality.
 pub fn frames(segments: &[Segment], pitch: &[(f64, f64)], voice: &Voice) -> Vec<(f64, Frame)> {
     let formants = formant_track(segments, voice.gender);
-    let sound = sound_track(segments);
+    let gains = voice.gains;
+    let sound = sound_track(segments, gains.nasal);
     let creak = creak_track(segments);
     let (vibrato, steady) = singing_tracks(segments, voice);
+    let lax_share = voice.lax_breathiness / 100.0;
+    let lax = if lax_share > 0.0 { lax_track(segments) } else { Track::new() };
     let mut f0 = Track::new();
     for &(t, hz) in pitch {
         f0.push(t, hz);
@@ -593,6 +678,7 @@ pub fn frames(segments: &[Segment], pitch: &[(f64, f64)], voice: &Voice) -> Vec<
         .chain(creak.points.iter().map(|p| p.0))
         .chain(vibrato.points.iter().map(|p| p.0))
         .chain(steady.points.iter().map(|p| p.0))
+        .chain(lax.points.iter().map(|p| p.0))
         .chain([0.0, end])
         .filter(|&t| (0.0..=end).contains(&t))
         .collect();
@@ -610,16 +696,22 @@ pub fn frames(segments: &[Segment], pitch: &[(f64, f64)], voice: &Voice) -> Vec<
         .map(|t| {
             let f = formants.at(t);
             let s = sound.at(t);
+            let relaxed = if lax_share > 0.0 && s.av > LAX_MIN_VOICING { lax.at(t) } else { 0.0 };
+            let ah = breath(&s, voice.breathiness, gains.aspiration);
             let frame = Frame {
                 f0: f0.at(t),
-                av: s.av,
+                av: scaled(s.av, gains.voicing),
                 oq: voice.open_quotient,
-                tl: voice.tilt + s.tl,
+                tl: voice.tilt + s.tl + lax_share * LAX_TILT * relaxed,
                 creak: creak.at(t),
                 vibrato: vibrato.at(t),
                 steady: steady.at(t),
-                ah: breath(&s, voice.breathiness),
-                af: s.af,
+                ah: if relaxed > 0.0 {
+                    added_db(ah, lax_share * (LAX_BREATH_START + LAX_BREATH_RISE * relaxed))
+                } else {
+                    ah
+                },
+                af: scaled(s.af, gains.frication),
                 freq: [
                     f.freq[0] * head,
                     f.freq[1] * head,
@@ -906,6 +998,140 @@ mod tests {
         // /s/ raises F6 from 4900 to 5500, and by that share of any value set.
         assert_eq!(f6_during_s(&Voice::default()), 5500.0);
         assert!((f6_during_s(&voice) - 6000.0 * 5500.0 / 4900.0).abs() < 1e-9);
+    }
+
+    /// The frame halfway through the first of these sounds.
+    fn middle_of(segs: &[Segment], frames: &[(f64, Frame)], phoneme: Phoneme) -> Frame {
+        let seg = segs.iter().find(|s| s.phoneme == phoneme).unwrap();
+        frame_at(frames, seg.start + seg.duration / 2.0)
+    }
+
+    #[test]
+    fn lax_breath_comes_at_the_end_of_a_sentence_and_before_voiceless_sounds() {
+        let lax = Voice { lax_breathiness: 100.0, ..Voice::default() };
+        let input = "[M AA1 M AA1 S AA1 M], [M AA1 M AA1 S M AA1 M].";
+        let (segs, frames) = with_voice(input, &lax);
+        let (_, plain) = with_voice(input, &Voice::default());
+        let vowels: Vec<&Segment> = segs.iter().filter(|s| s.phoneme == Phoneme::AA).collect();
+        let late = |seg: &Segment| seg.end() - 5.0;
+        // Not in a vowel before a voiced sound.
+        assert_eq!(frame_at(&frames, late(vowels[0])).ah, 0.0);
+        assert_eq!(frame_at(&frames, late(vowels[0])).tl, frame_at(&plain, late(vowels[0])).tl);
+        // Before S, yes: breath comes up and the voice's high frequencies fall away.
+        let before_s = frame_at(&frames, late(vowels[1]));
+        assert!(before_s.ah > 35.0, "{}", before_s.ah);
+        assert!(before_s.tl > frame_at(&plain, late(vowels[1])).tl + 5.0, "{}", before_s.tl);
+        // Not at a comma, which isn't the end of a sentence.
+        assert_eq!(frame_at(&frames, late(vowels[2])).ah, 0.0);
+        // At the end of the sentence, the most.
+        let end = frame_at(&frames, late(vowels[5]));
+        assert!(end.ah > 45.0, "{}", end.ah);
+        assert!(end.tl > frame_at(&plain, late(vowels[5])).tl + 9.0, "{}", end.tl);
+        // Just before it starts, none.
+        assert_eq!(frame_at(&frames, vowels[5].start - 1.0).ah, 0.0);
+    }
+
+    #[test]
+    fn lax_breath_adds_to_a_voices_breath_and_scales_with_the_setting() {
+        let input = "[M AA1 M].";
+        let end_breath = |voice: &Voice| {
+            let (segs, frames) = with_voice(input, voice);
+            let vowel = segs.iter().find(|s| s.phoneme == Phoneme::AA).unwrap();
+            frame_at(&frames, vowel.end() - 5.0).ah
+        };
+        let breathy = Voice { breathiness: 40.0, ..Voice::default() };
+        let more = Voice { lax_breathiness: 100.0, ..breathy };
+        assert!(end_breath(&more) > end_breath(&breathy) + 3.0);
+        let half = Voice { lax_breathiness: 50.0, ..Voice::default() };
+        let full = Voice { lax_breathiness: 100.0, ..Voice::default() };
+        assert!(end_breath(&half) < end_breath(&full) - 10.0);
+        assert_eq!(added_db(0.0, 40.0), 40.0);
+        assert_eq!(added_db(40.0, 0.0), 40.0);
+        assert!((added_db(40.0, 40.0) - 46.02).abs() < 0.01);
+    }
+
+    #[test]
+    fn no_lax_breath_while_singing() {
+        let lax = Voice { lax_breathiness: 100.0, ..Voice::default() };
+        let input = "[AA1<500,25> S AA1<500,25>].";
+        let (segs, frames) = with_voice(input, &lax);
+        let first = segs.iter().find(|s| s.phoneme == Phoneme::AA).unwrap();
+        assert_eq!(frame_at(&frames, first.end() - 5.0).ah, 0.0);
+    }
+
+    #[test]
+    fn each_gain_moves_its_own_sound_and_no_other() {
+        use crate::voicedefs::SourceGains;
+        let input = "[HH AE1 S M AA1].";
+        let (segs, normal) = with_voice(input, &Voice::default());
+        let at = |gains: SourceGains, phoneme: Phoneme| {
+            let (_, frames) = with_voice(input, &Voice { gains, ..Voice::default() });
+            middle_of(&segs, &frames, phoneme)
+        };
+        let usual = |phoneme: Phoneme| middle_of(&segs, &normal, phoneme);
+        let half_db = 20.0 * 0.5f64.log10();
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        let half = |voicing, frication, aspiration, nasal| SourceGains { voicing, frication, aspiration, nasal };
+
+        let voicing = half(0.5, 1.0, 1.0, 1.0);
+        assert!(near(at(voicing, Phoneme::AE).av, usual(Phoneme::AE).av + half_db));
+        assert!(near(at(voicing, Phoneme::M).av, usual(Phoneme::M).av + half_db));
+        assert_eq!(at(voicing, Phoneme::S).af, usual(Phoneme::S).af);
+        assert_eq!(at(voicing, Phoneme::HH).ah, usual(Phoneme::HH).ah);
+
+        let frication = half(1.0, 0.5, 1.0, 1.0);
+        assert!(near(at(frication, Phoneme::S).af, usual(Phoneme::S).af + half_db));
+        assert_eq!(at(frication, Phoneme::AE).av, usual(Phoneme::AE).av);
+        assert_eq!(at(frication, Phoneme::HH).ah, usual(Phoneme::HH).ah);
+
+        let aspiration = half(1.0, 1.0, 0.5, 1.0);
+        assert!(near(at(aspiration, Phoneme::HH).ah, usual(Phoneme::HH).ah + half_db));
+        assert_eq!(at(aspiration, Phoneme::S).af, usual(Phoneme::S).af);
+        assert_eq!(at(aspiration, Phoneme::AE).av, usual(Phoneme::AE).av);
+
+        let nasal = half(1.0, 1.0, 1.0, 0.5);
+        assert!(near(at(nasal, Phoneme::M).av, usual(Phoneme::M).av + half_db));
+        assert_eq!(at(nasal, Phoneme::AE).av, usual(Phoneme::AE).av);
+        assert_eq!(at(nasal, Phoneme::S).af, usual(Phoneme::S).af);
+
+        // Zero is off.
+        assert_eq!(at(half(0.0, 1.0, 1.0, 1.0), Phoneme::AE).av, 0.0);
+        assert_eq!(at(half(1.0, 0.0, 1.0, 1.0), Phoneme::S).af, 0.0);
+        assert_eq!(at(half(1.0, 1.0, 0.0, 1.0), Phoneme::HH).ah, 0.0);
+        assert_eq!(at(half(1.0, 1.0, 1.0, 0.0), Phoneme::M).av, 0.0);
+    }
+
+    #[test]
+    fn a_gain_leaves_silence_silent() {
+        use crate::voicedefs::SourceGains;
+        let gains = SourceGains { voicing: 2.0, frication: 2.0, aspiration: 2.0, nasal: 2.0 };
+        let input = "[AA1 T AA1].";
+        let (segs, frames) = with_voice(input, &Voice { gains, ..Voice::default() });
+        let closure = segs.iter().find(|s| s.phoneme == Phoneme::T).unwrap();
+        let f = frame_at(&frames, closure.start + closure.duration / 2.0);
+        assert_eq!((f.av, f.af, f.ah), (0.0, 0.0, 0.0));
+        assert_eq!(scaled(0.0, 2.0), 0.0);
+        assert_eq!(scaled(60.0, 1.0), 60.0);
+        assert!((scaled(60.0, 2.0) - 66.0206).abs() < 0.001);
+    }
+
+    #[test]
+    fn aspiration_leaves_a_voices_breath_alone_and_no_voicing_leaves_a_whisper() {
+        use crate::voicedefs::SourceGains;
+        let input = "[HH AE1 S].";
+        let quiet = SourceGains { aspiration: 0.0, ..SourceGains::NORMAL };
+        let breathy = Voice { breathiness: 50.0, gains: quiet, ..Voice::default() };
+        let (segs, frames) = with_voice(input, &breathy);
+        // No H, and the breath through the vowel as it was.
+        assert!(middle_of(&segs, &frames, Phoneme::AE).ah > 45.0);
+        assert_eq!(middle_of(&segs, &frames, Phoneme::HH).ah, 0.0);
+
+        let silent = SourceGains { voicing: 0.0, ..SourceGains::NORMAL };
+        let whisper = Voice { breathiness: 60.0, gains: silent, ..Voice::default() };
+        let (segs, frames) = with_voice(input, &whisper);
+        let vowel = middle_of(&segs, &frames, Phoneme::AE);
+        assert_eq!(vowel.av, 0.0);
+        assert!(vowel.ah > 50.0, "{}", vowel.ah);
     }
 
     #[test]

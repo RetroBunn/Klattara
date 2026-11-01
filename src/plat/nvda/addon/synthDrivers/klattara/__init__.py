@@ -100,6 +100,8 @@ def load_library(path):
 	lib.klattara_voice_count.restype = ctypes.c_int
 	lib.klattara_voice_name.argtypes = [ctypes.c_int]
 	lib.klattara_voice_name.restype = ctypes.c_char_p
+	lib.klattara_voice_full_name.argtypes = [ctypes.c_int]
+	lib.klattara_voice_full_name.restype = ctypes.c_char_p
 	lib.klattara_voice_pitch.argtypes = [ctypes.c_int]
 	lib.klattara_voice_pitch.restype = ctypes.c_double
 	lib.klattara_voice_inflection.argtypes = [ctypes.c_int]
@@ -170,12 +172,11 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 		if not self._engine:
 			raise RuntimeError("Klattara could not create an engine")
 		# The voices are defined in the engine, the default first. Each is known
-		# to NVDA by its name in lower case.
-		self._voiceNames = [
-			self._lib.klattara_voice_name(index).decode("utf-8")
-			for index in range(self._lib.klattara_voice_count())
-		]
-		self._voiceIds = [name.lower() for name in self._voiceNames]
+		# to NVDA by its short name in lower case, which is what gets saved, and
+		# shown by its full name.
+		voices = range(self._lib.klattara_voice_count())
+		self._voiceIds = [self._lib.klattara_voice_name(index).decode("utf-8").lower() for index in voices]
+		self._voiceNames = [self._lib.klattara_voice_full_name(index).decode("utf-8") for index in voices]
 		self._voice = self._voiceIds[0]
 		self._rate = self._rateSetting.defaultVal
 		self._pitch = self._pitchSetting.defaultVal

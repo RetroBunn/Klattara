@@ -106,6 +106,18 @@ pub extern "C" fn klattara_voice_name(index: c_int) -> *const c_char {
     })
 }
 
+/// The full name of voice `index`, for showing to people, as a constant string, or
+/// null if there is no such voice.
+#[unsafe(no_mangle)]
+pub extern "C" fn klattara_voice_full_name(index: c_int) -> *const c_char {
+    static NAMES: OnceLock<Vec<CString>> = OnceLock::new();
+    guard(std::ptr::null(), || {
+        let names =
+            NAMES.get_or_init(|| VOICES.iter().map(|v| CString::new(v.full_name).unwrap_or_default()).collect());
+        usize::try_from(index).ok().and_then(|i| names.get(i)).map_or(std::ptr::null(), |name| name.as_ptr())
+    })
+}
+
 /// The base pitch of voice `index` in Hz, or 0 if there is no such voice.
 #[unsafe(no_mangle)]
 pub extern "C" fn klattara_voice_pitch(index: c_int) -> f64 {
@@ -429,9 +441,16 @@ mod tests {
 
     #[test]
     fn lists_the_voices() {
-        assert_eq!(klattara_voice_count(), 3);
+        assert_eq!(klattara_voice_count(), 5);
         let name = |index| unsafe { CStr::from_ptr(klattara_voice_name(index)) }.to_str().unwrap();
-        assert_eq!((name(0), name(1), name(2)), ("Steve", "Brittany", "Gary"));
+        assert_eq!((name(0), name(1), name(2), name(3)), ("Steve", "Brittany", "Gary", "David"));
+        let full = |index| unsafe { CStr::from_ptr(klattara_voice_full_name(index)) }.to_str().unwrap();
+        assert_eq!(
+            (full(0), full(1), full(2), full(3)),
+            ("Standard Steve", "Breezy Brittany", "Giant Gary", "Delicate David")
+        );
+        assert_eq!((klattara_voice_pitch(3), klattara_voice_inflection(3)), (138.0, 0.8));
+        assert_eq!(klattara_voice_gender(3), KLATTARA_MALE);
         assert_eq!((klattara_voice_pitch(0), klattara_voice_pitch(1), klattara_voice_pitch(2)), (110.0, 210.0, 78.0));
         assert_eq!(
             (klattara_voice_inflection(0), klattara_voice_inflection(1), klattara_voice_inflection(2)),
@@ -441,8 +460,12 @@ mod tests {
             (klattara_voice_gender(0), klattara_voice_gender(1), klattara_voice_gender(2)),
             (KLATTARA_MALE, KLATTARA_FEMALE, KLATTARA_MALE)
         );
-        for bad in [-1, 3] {
+        assert_eq!((name(4), full(4)), ("Taylor", "Tiny Taylor"));
+        assert_eq!((klattara_voice_pitch(4), klattara_voice_inflection(4)), (270.0, 1.15));
+        assert_eq!(klattara_voice_gender(4), KLATTARA_FEMALE);
+        for bad in [-1, 5] {
             assert!(klattara_voice_name(bad).is_null());
+            assert!(klattara_voice_full_name(bad).is_null());
             assert_eq!(klattara_voice_pitch(bad), 0.0);
             assert_eq!(klattara_voice_inflection(bad), -1.0);
             assert_eq!(klattara_voice_gender(bad), KLATTARA_INVALID);

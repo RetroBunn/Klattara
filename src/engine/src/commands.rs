@@ -114,7 +114,23 @@ const MOST_RICH_OPEN_QUOTIENT: f64 = 0.2;
 ///   Set close together, formants add up: F4 and F5 both at 2600 Hz are 5.7 dB louder, and
 ///   1% of the samples reach the soft clipper. F4 and F5 at 3000 and 3400 add 0.3 dB.
 /// - `b4`, `b5` and `b6`: their bandwidths, Hz.
-static SETTINGS: [Setting; 14] = [
+/// - `fl`: flutter, as a percentage: how much the pitch wavers, slowly and unevenly. It is
+///   the FL of KLSYN88 (Klatt and Klatt 1990), and 25 is what most voices have.
+/// - `vvl`, `fvl`, `avl` and `nvl`: how loud voicing, frication, aspiration and nasals are,
+///   as a percentage of normal, so 100 is normal, 50 is about 6 dB quieter, and 0 is off.
+///   DECtalk's gv, gf and gh do the same job in dB, from defaults that differ for each voice
+///   and each source, so a setting means little without knowing them. Here every voice
+///   starts at 100. DECtalk's gn scales a point in the whole voiced path, not the nasals,
+///   and its later versions leave it unused, so `nvl` is this engine's own and sets the
+///   level of M, N and NG. Its g1 to g5 keep the signal in range in fixed-point
+///   arithmetic, which this engine doesn't need.
+/// - `fa`, `ha`, `st` and `qk`: the pitch shape, as in [`crate::PitchShape`]: baseline fall,
+///   hat rise, stress rise and quickness, DECtalk's bf, hr, sr and qu, with its limits for
+///   the fall and for quickness. Its hat and stress rises stop at 2 and 1, and here 0 means
+///   none.
+/// - `lx`: lax breathiness, as a percentage, DECtalk's lx.
+/// - `oq`: the open quotient, as a percentage. `rc` sets the same thing from the other end.
+static SETTINGS: [Setting; 25] = [
     Setting::number("pi", 40.0, 550.0, |voice, hz| voice.pitch = hz),
     Setting::number("in", 0.0, 250.0, |voice, percent| voice.inflection = percent / 100.0),
     Setting::number("hs", 64.0, 135.0, |voice, percent| voice.head_size = percent),
@@ -138,6 +154,17 @@ static SETTINGS: [Setting; 14] = [
     Setting::number("b4", 100.0, 4000.0, |voice, hz| voice.upper_bandwidths[0] = Some(hz)),
     Setting::number("b5", 100.0, 4000.0, |voice, hz| voice.upper_bandwidths[1] = Some(hz)),
     Setting::number("b6", 100.0, 4000.0, |voice, hz| voice.upper_bandwidths[2] = Some(hz)),
+    Setting::number("fl", 0.0, 100.0, |voice, percent| voice.flutter = percent),
+    Setting::number("vvl", 0.0, 200.0, |voice, percent| voice.gains.voicing = percent / 100.0),
+    Setting::number("fvl", 0.0, 200.0, |voice, percent| voice.gains.frication = percent / 100.0),
+    Setting::number("avl", 0.0, 200.0, |voice, percent| voice.gains.aspiration = percent / 100.0),
+    Setting::number("nvl", 0.0, 200.0, |voice, percent| voice.gains.nasal = percent / 100.0),
+    Setting::number("fa", 0.0, 90.0, |voice, fall| voice.pitch_shape.baseline_fall = fall),
+    Setting::number("ha", 0.0, 100.0, |voice, rise| voice.pitch_shape.hat_rise = rise),
+    Setting::number("st", 0.0, 100.0, |voice, rise| voice.pitch_shape.stress_rise = rise),
+    Setting::number("qk", 0.0, 100.0, |voice, percent| voice.pitch_shape.quickness = percent),
+    Setting::number("lx", 0.0, 100.0, |voice, percent| voice.lax_breathiness = percent),
+    Setting::number("oq", 20.0, 90.0, |voice, percent| voice.open_quotient = percent / 100.0),
 ];
 
 /// The commands that set one thing each, written `[:name value]`, with the values each
@@ -682,6 +709,68 @@ mod tests {
     }
 
     #[test]
+    fn pitch_shape_lax_breath_and_open_quotient_are_set_and_stop_at_their_limits() {
+        use crate::voicedefs::PitchShape;
+        let voice = after("[:cv fa 9 ha 20 st 22 qk 10 lx 50 oq 70]");
+        let shape = PitchShape { baseline_fall: 9.0, hat_rise: 20.0, stress_rise: 22.0, quickness: 10.0 };
+        assert_eq!(voice.pitch_shape, shape);
+        assert_eq!((voice.lax_breathiness, voice.open_quotient), (50.0, 0.7));
+        let high = after("[:cv fa 999 ha 999 st 999 qk 999 lx 999 oq 999]");
+        let top = PitchShape { baseline_fall: 90.0, hat_rise: 100.0, stress_rise: 100.0, quickness: 100.0 };
+        assert_eq!(high.pitch_shape, top);
+        assert_eq!((high.lax_breathiness, high.open_quotient), (100.0, 0.9));
+        let low = after("[:CV FA 0 HA 0 ST 0 QK 0 LX 0 OQ 1]");
+        let none = PitchShape { baseline_fall: 0.0, hat_rise: 0.0, stress_rise: 0.0, quickness: 0.0 };
+        assert_eq!(low.pitch_shape, none);
+        assert_eq!((low.lax_breathiness, low.open_quotient), (0.0, 0.2));
+        // Steve's own values, as numbers you can type.
+        assert_eq!(after("[:cv fa 18 ha 18 st 32 qk 40 lx 0 oq 55]"), Voice::default());
+        for bad in ["[:cv fa low]", "[:cv ha low]", "[:cv st low]", "[:cv qk low]", "[:cv lx low]", "[:cv oq low]"] {
+            assert_eq!(read(bad, false), plain(Alert::Parameter.words()), "{bad}");
+        }
+        assert_eq!(read("[:cv qk]", false), plain(Alert::Value.words()));
+        // A voice brings its own, and a reset the first voice's.
+        assert_eq!(after("[:cv fa 50 lx 50 oq 30][:vs]"), Voice::default());
+        assert_eq!(after("[:cv fa 50 lx 50 oq 30][:reset]"), Voice::default());
+        assert_eq!(after("[:vd]").pitch_shape.stress_rise, 20.0);
+        // The last of rc and oq counts, since they set the same thing.
+        assert_eq!(after("[:cv rc 50 oq 70]").open_quotient, 0.7);
+        assert!((after("[:cv oq 70 rc 50]").open_quotient - 0.55).abs() < 1e-9);
+    }
+
+    #[test]
+    fn gains_are_set_and_stop_at_their_limits() {
+        use crate::voicedefs::SourceGains;
+        assert_eq!(Voice::default().gains, SourceGains::NORMAL);
+        let gains = after("[:cv vvl 150 fvl 50 avl 0 nvl 200]").gains;
+        assert_eq!(gains, SourceGains { voicing: 1.5, frication: 0.5, aspiration: 0.0, nasal: 2.0 });
+        assert_eq!(after("[:CV VVL 25]").gains.voicing, 0.25);
+        let high = after("[:cv vvl 999 fvl 999 avl 999 nvl 999]").gains;
+        assert_eq!(high, SourceGains { voicing: 2.0, frication: 2.0, aspiration: 2.0, nasal: 2.0 });
+        for bad in ["[:cv vvl loud]", "[:cv fvl loud]", "[:cv avl loud]", "[:cv nvl loud]", "[:cv gvl 50]"] {
+            assert_eq!(read(bad, false), plain(Alert::Parameter.words()), "{bad}");
+        }
+        assert_eq!(read("[:cv fvl]", false), plain(Alert::Value.words()));
+        // A new voice or a reset brings them back.
+        assert_eq!(after("[:cv vvl 50 fvl 50 avl 50 nvl 50][:vs]"), Voice::default());
+        assert_eq!(after("[:cv vvl 50 fvl 50 avl 50 nvl 50][:reset]"), Voice::default());
+    }
+
+    #[test]
+    fn flutter_is_set_and_stops_at_its_limits() {
+        assert_eq!(Voice::default().flutter, 25.0);
+        assert_eq!(after("[:cv fl 60]").flutter, 60.0);
+        assert_eq!(after("[:CV FL 0]").flutter, 0.0);
+        assert_eq!(after("[:cv fl 999]").flutter, 100.0);
+        assert_eq!(read("[:cv fl shaky]", false), plain(Alert::Parameter.words()));
+        assert_eq!(read("[:cv fl]", false), plain(Alert::Value.words()));
+        // A voice brings its own.
+        assert_eq!(after("[:cv fl 90][:vd]").flutter, 60.0);
+        assert_eq!(after("[:vd][:cv fl 90][:vs]"), Voice::default());
+        assert_eq!(after("[:cv fl 90][:reset]"), Voice::default());
+    }
+
+    #[test]
     fn bad_upper_formants_say_so() {
         for input in ["[:cv f4 high]", "[:cv b5 wide]"] {
             assert_eq!(read(input, false), plain(Alert::Parameter.words()), "{input}");
@@ -731,6 +820,16 @@ mod tests {
             assert_eq!(after(command), gary, "{command}");
         }
         assert_eq!(gary.upper_formants, [Some(3400.0), Some(3650.0), Some(5600.0)]);
+        let david = Voice::from(find_voice("David").unwrap());
+        for command in ["[:vd]", "[:VD]", "[:voice David]", "[:voice david]"] {
+            assert_eq!(after(command), david, "{command}");
+        }
+        assert_eq!(after("[:vd][:vs]"), Voice::default());
+        let taylor = Voice::from(find_voice("Taylor").unwrap());
+        for command in ["[:vt]", "[:VT]", "[:voice Taylor]", "[:voice taylor]"] {
+            assert_eq!(after(command), taylor, "{command}");
+        }
+        assert_eq!(after("[:vt][:vs]"), Voice::default());
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 use crate::commands::{self, Part};
 use crate::frame::Frame;
-use crate::intonation::pitch_keyframes;
+use crate::intonation::shaped_keyframes;
 use crate::phoneme::Phoneme;
 use crate::singing::{VIBRATO_DELAY, VIBRATO_DEPTH, VIBRATO_SPEED};
 use crate::synth::{Synth, VoiceSettings};
@@ -10,7 +10,7 @@ use crate::text;
 use crate::timing::assign_durations;
 use crate::tracks;
 use crate::utterance::{Boundary, ParseError, Phrase, Segment, notation, parse, segments};
-use crate::voicedefs::{Gender, VOICES, VoiceDef};
+use crate::voicedefs::{Gender, PitchShape, SourceGains, VOICES, VoiceDef};
 
 /// The adjustable character of a voice.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -45,6 +45,13 @@ pub struct Voice {
     pub upper_formants: [Option<f64>; 3],
     /// The bandwidths of F4 to F6, Hz, where set, in the same way.
     pub upper_bandwidths: [Option<f64>; 3],
+    /// How loud each kind of sound is, as a share of normal.
+    pub gains: SourceGains,
+    /// Breath at the ends of sentences and before voiceless sounds, as the folds relax,
+    /// as a percentage. 0 is none.
+    pub lax_breathiness: f64,
+    /// How the voice moves its pitch.
+    pub pitch_shape: PitchShape,
     /// Slow pitch wobble, as in [`VoiceSettings::flutter`].
     pub flutter: f64,
     /// Output gain that brings the voice to the level of the others, as in
@@ -86,6 +93,9 @@ impl Default for Voice {
             roughness: first.roughness,
             upper_formants: first.upper_formants,
             upper_bandwidths: first.upper_bandwidths,
+            gains: first.gains,
+            lax_breathiness: first.lax_breathiness,
+            pitch_shape: first.pitch_shape,
             flutter: first.flutter,
             level: first.level,
             volume: 1.0,
@@ -122,6 +132,9 @@ impl Voice {
         self.roughness = def.roughness;
         self.upper_formants = def.upper_formants;
         self.upper_bandwidths = def.upper_bandwidths;
+        self.gains = def.gains;
+        self.lax_breathiness = def.lax_breathiness;
+        self.pitch_shape = def.pitch_shape;
         self.flutter = def.flutter;
         self.level = def.level;
     }
@@ -272,7 +285,7 @@ fn batches(phrases: Vec<Phrase>) -> Vec<Vec<Phrase>> {
 /// Plans speech at the voice's rate.
 fn plan(phrases: &[Phrase], voice: &Voice) -> Vec<(f64, Frame)> {
     let (segments, compression) = timeline(phrases, voice.rate.clamp(0.25, 8.0));
-    let pitch = pitch_keyframes(&segments, voice.pitch, voice.inflection);
+    let pitch = shaped_keyframes(&segments, voice.pitch, voice.inflection, &voice.pitch_shape);
     let frames = tracks::frames(&segments, &pitch, voice);
     if segments.iter().all(|s| s.written.duration.is_none()) {
         return frames.into_iter().map(|(t, frame)| (t / compression, frame)).collect();
@@ -531,6 +544,50 @@ mod tests {
     }
 
     #[test]
+    fn pitch_shape_lax_breath_and_open_quotient_reach_the_sound_and_leave_the_timing_alone() {
+        let voice = Voice::default();
+        let text = "The old mill stood at the edge of the river.";
+        let plain = speak_text(text, &voice, 22050);
+        // Steve's own values change nothing.
+        let own = format!("[:cv fa 18 ha 18 st 32 qk 40 lx 0 oq 55]{text}");
+        assert_eq!(speak_text(&own, &voice, 22050), plain);
+        for command in ["[:cv fa 40]", "[:cv ha 40]", "[:cv st 60]", "[:cv qk 90]", "[:cv lx 80]", "[:cv oq 70]"] {
+            let changed = speak_text(&format!("{command}{text}"), &voice, 22050);
+            assert_ne!(changed, plain, "{command}");
+            assert_eq!(changed.len(), plain.len(), "{command}");
+        }
+    }
+
+    #[test]
+    fn gains_reach_the_sound_and_leave_the_timing_alone() {
+        let voice = Voice::default();
+        let text = "Hello, Sam and Tim.";
+        let plain = speak_text(text, &voice, 22050);
+        // At normal they change nothing.
+        assert_eq!(speak_text(&format!("[:cv vvl 100 fvl 100 avl 100 nvl 100]{text}"), &voice, 22050), plain);
+        for command in ["[:cv vvl 50]", "[:cv fvl 50]", "[:cv avl 50]", "[:cv nvl 50]", "[:cv fvl 200]"] {
+            let changed = speak_text(&format!("{command}{text}"), &voice, 22050);
+            assert_ne!(changed, plain, "{command}");
+            assert_eq!(changed.len(), plain.len(), "{command}");
+        }
+    }
+
+    #[test]
+    fn flutter_reaches_the_sound_and_leaves_the_timing_alone() {
+        let voice = Voice::default();
+        let plain = speak_text("Hello there.", &voice, 22050);
+        // Steve's own value changes nothing.
+        assert_eq!(speak_text("[:cv fl 25]Hello there.", &voice, 22050), plain);
+        for command in ["[:cv fl 0]", "[:cv fl 100]"] {
+            let changed = speak_text(&format!("{command}Hello there."), &voice, 22050);
+            assert_ne!(changed, plain, "{command}");
+            assert_eq!(changed.len(), plain.len(), "{command}");
+        }
+        // A monotone stays one, whatever the flutter.
+        assert_eq!(synth_settings(&Voice { flutter: 100.0, inflection: 0.0, ..voice }).flutter, 0.0);
+    }
+
+    #[test]
     fn upper_formants_reach_the_sound_and_leave_the_timing_alone() {
         let voice = Voice::default();
         let plain = speak_text("Hello there.", &voice, 22050);
@@ -600,9 +657,10 @@ mod tests {
     fn frames_follow_each_part_in_order() {
         let frames = text_frames("One. [:cv pi 300] Two.", &Voice::default());
         assert!(frames.windows(2).all(|w| w[1].0 >= w[0].0));
-        let highest = |range: &[(f64, Frame)]| range.iter().fold(0.0f64, |high, (_, f)| high.max(f.f0));
-        let middle = frames.len() / 2;
-        assert!(highest(&frames[..middle]) < 200.0 && highest(&frames[middle..]) > 250.0);
+        // The second word is an octave and more above the first, wherever it falls.
+        let second = frames.iter().position(|(_, f)| f.f0 > 150.0).unwrap();
+        assert!(frames[..second].iter().any(|(_, f)| f.f0 > 80.0));
+        assert!(frames[second..].iter().all(|(_, f)| f.f0 == 0.0 || f.f0 > 150.0));
     }
 
     #[test]
