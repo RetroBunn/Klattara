@@ -1,0 +1,13 @@
+[package]
+name = "klattara-macos"
+version = "1.0.0"
+edition = "2024"
+license = "MIT"
+description = "Klattara's C interface as a static library, for the macOS speech synthesis extension"
+
+[lib]
+name = "klattara"
+crate-type = ["staticlib"]
+
+[dependencies]
+engine = { package = "klattara", path = "../../../engine" }
