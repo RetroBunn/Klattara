@@ -124,6 +124,52 @@ class WavePlayer:
         self.stop()
 
 
+def validate(spec, value):
+    """Checks a value against a setting's config spec as NVDA's configuration
+    does when a value is assigned (config/__init__.py, AggregatedSection
+    __setitem__: validator.check(spec, val)), with configobj's own validator
+    if it is installed, and otherwise by its rules for integer, boolean and
+    string: an integer must be an int (a float such as 110.0 is "the wrong
+    type") and within min and max."""
+    try:
+        from configobj.validate import Validator
+    except ImportError:
+        pass
+    else:
+        return Validator().check(spec, value)
+    kind, _, args = spec.partition("(")
+    params = dict(arg.split("=", 1) for arg in args.rstrip(")").split(",") if "=" in arg)
+    if kind == "integer":
+        if not isinstance(value, (int, str)):
+            raise ValueError(f'the value "{value}" is of the wrong type')
+        value = int(value)
+        if "min" in params and value < int(params["min"]):
+            raise ValueError(f'the value "{value}" is too small')
+        if "max" in params and value > int(params["max"]):
+            raise ValueError(f'the value "{value}" is too big')
+    elif kind == "boolean" and not isinstance(value, (bool, int, str)):
+        raise ValueError(f'the value "{value}" is of the wrong type')
+    elif kind == "string" and not isinstance(value, str) and value is not None:
+        raise ValueError(f'the value "{value}" is of the wrong type')
+    return value
+
+
+class ValidatingSection(dict):
+    """Stands in for the synth's section of NVDA's configuration, and refuses a
+    value its setting's spec does not allow, as NVDA does. A refused value
+    raises out of saveSettings, and in NVDA that leaves the settings dialog's
+    OK and Apply doing nothing."""
+
+    def __init__(self, settings):
+        super().__init__()
+        self.specs = {setting.id: setting.configSpec for setting in settings}
+
+    def __setitem__(self, key, value):
+        if key in self.specs:
+            value = validate(self.specs[key], value)
+        super().__setitem__(key, value)
+
+
 def load_nvda():
     """Imports NVDA's real modules, with stand-ins for its runtime."""
     if not (NVDA_SOURCE / "synthDriverHandler.py").is_file():
@@ -327,8 +373,8 @@ def main():
         f"pitch in hertz is off by default: {specs['_pitchInHertz']}",
     )
     check(
-        specs["_rateWpm"] == "integer(default=190,min=38,max=1796)",
-        f"rate in words per minute spans 38 to 1796: {specs['_rateWpm']}",
+        specs["_rateWpm"] == "integer(default=190,min=30,max=1920)",
+        f"rate in words per minute spans 30 to 1920: {specs['_rateWpm']}",
     )
     check(
         specs["_rateInWpm"] == "boolean(default=False)",
@@ -355,7 +401,7 @@ def main():
 
     synth = SynthDriver()
     # What NVDA does on loading a synth for the first time: save the defaults.
-    config.conf["speech"][synth.name] = {}
+    config.conf["speech"][synth.name] = ValidatingSection(synth.supportedSettings)
     synth.saveSettings()
     synthDriverHandler._curSynth = synth
     check(config.conf["speech"]["klattara"]["rate"] == 15, "the default settings are saved to NVDA's configuration")
@@ -489,9 +535,14 @@ def main():
         check(rates == [1.0], f"190 words per minute is the normal rate: {rates}")
         pitches.clear()
         rates.clear()
+        synth.configure_rate_wpm(True, 30)
+        speak_and_measure(synth, ["Hello.  "])
+        check(rates == [0.2032], f"30 words per minute is the slowest rate: {rates}")
+        pitches.clear()
+        rates.clear()
         synth.configure_rate_wpm(True, 38)
         speak_and_measure(synth, ["Hello.  "])
-        check(rates == [0.25], f"38 words per minute is the slowest rate: {rates}")
+        check(rates == [0.25], f"38 words per minute is rate 0.25, as before: {rates}")
         pitches.clear()
         rates.clear()
         synth.configure_rate_wpm(True, 1600)
@@ -501,9 +552,22 @@ def main():
         rates.clear()
         synth.configure_rate_wpm(True, 1796)
         speak_and_measure(synth, ["Hello.  "])
-        check(rates == [8.0], f"1796 words per minute is the fastest rate: {rates}")
+        check(rates == [8.0], f"1796 words per minute is rate 8, as before: {rates}")
+        pitches.clear()
+        rates.clear()
+        synth.configure_rate_wpm(True, 1920)
+        speak_and_measure(synth, ["Hello.  "])
+        check(rates == [8.5276], f"1920 words per minute is the fastest rate: {rates}")
+        check(synth._lib.klattara_set_rate(synth._engine, 8.5276) == 0, "the library takes the fastest rate")
+        check(synth._lib.klattara_set_rate(synth._engine, 0.2032) == 0, "and the slowest")
+        # The driver's table must be the engine's, row for row.
+        import re
+        speech_rs = (ROOT / "src" / "engine" / "src" / "speech.rs").read_text(encoding="utf-8")
+        body = speech_rs.split("const WORDS_PER_MINUTE", 1)[1].split("];", 1)[0]
+        engine_table = tuple((float(w), float(r)) for w, r in re.findall(r"\(([\d.]+), ([\d.]+)\)", body))
+        check(engine_table == driver.WPM_TABLE, f"the driver's words-per-minute table is the engine's: {engine_table}")
         # Out of range is refused, not clamped silently.
-        for bad in (lambda: synth.configure_rate_wpm(True, 30), lambda: synth.configure_rate_wpm(True, 1797),
+        for bad in (lambda: synth.configure_rate_wpm(True, 29), lambda: synth.configure_rate_wpm(True, 1921),
                     lambda: synth.configure_pitch_hertz(True, 39), lambda: synth.configure_pitch_hertz(True, 551)):
             try:
                 bad()
@@ -532,6 +596,20 @@ def main():
         synth._pitchInHertz = False
         synthDriverHandler.changeVoice(synth, "gary")
         check(synth._pitchHertz == 78, f"the hertz value follows Gary's 78 Hz: {synth._pitchHertz}")
+        # Regression (1.9.3): the hertz value taken from a voice was the
+        # library's float, 78.0. NVDA's configuration refuses a float for an
+        # integer setting, so saving after any change of voice raised, and
+        # the settings dialog's OK and Apply did nothing.
+        check(type(synth._pitchHertz) is int, f"the hertz value from a voice is a whole number: {synth._pitchHertz!r}")
+        synth.saveSettings()
+        check(
+            config.conf["speech"]["klattara"]["_pitchHertz"] == 78,
+            "the settings save after a change of voice, as OK and Apply do",
+        )
+        for name in synth._voiceIds:
+            synthDriverHandler.changeVoice(synth, name)
+            synth.saveSettings()
+        check(True, "every voice's settings save, with hertz pitch off")
         synthDriverHandler.changeVoice(synth, "steve")
         synth.rate, synth.pitch = old_rate, old_pitch
         synth._lib.klattara_set_pitch = set_pitch

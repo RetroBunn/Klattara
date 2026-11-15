@@ -16,6 +16,18 @@ import wx
 
 addonHandler.initTranslation()
 
+# The exact rate's range in words per minute, the engine's measured ends.
+MIN_WPM, MAX_WPM = 30, 1920
+
+
+def _whole(value, low, high):
+	"""A value for a spin control: a whole number within its range. wx.SpinCtrl
+	refuses a float with TypeError, even a whole one such as 210.0, and a
+	voice's pitch used to reach the synth as one; that raised part way through
+	building or refreshing the panel, which left the rate controls showing old,
+	unrelated values."""
+	return int(min(high, max(low, round(value))))
+
 
 class KlattaraSettingsPanel(SettingsPanel):
 	title = _("Klattara")
@@ -26,10 +38,14 @@ class KlattaraSettingsPanel(SettingsPanel):
 		self.pitch_dirty = False
 		self.wpm_dirty = False
 		self._saved_pitch = (
-			(self.synth._pitchInHertz, self.synth._pitchHertz) if self.synth else None
+			(bool(self.synth._pitchInHertz), _whole(self.synth._pitchHertz, 40, 550))
+			if self.synth
+			else None
 		)
 		self._saved_wpm = (
-			(self.synth._rateInWpm, self.synth._rateWpm) if self.synth else None
+			(bool(self.synth._rateInWpm), _whole(self.synth._rateWpm, MIN_WPM, MAX_WPM))
+			if self.synth
+			else None
 		)
 		self._updating = False
 		sizer.Add(wx.StaticText(self, label=_("Exact base pitch")), 0, wx.ALL, 10)
@@ -42,7 +58,7 @@ class KlattaraSettingsPanel(SettingsPanel):
 			self,
 			min=40,
 			max=550,
-			initial=self.synth._pitchHertz if self.synth else 110,
+			initial=_whole(self.synth._pitchHertz, 40, 550) if self.synth else 110,
 		)
 		self.pitch_hz_value.SetName(pitch_label.GetLabelText())
 		sizer.Add(self.pitch_hz_value, 0, wx.ALL, 10)
@@ -65,14 +81,14 @@ class KlattaraSettingsPanel(SettingsPanel):
 		self.wpm_mode.SetValue(self.synth._rateInWpm if self.synth else False)
 		sizer.Add(self.wpm_mode, 0, wx.ALL, 10)
 		wpm_label = wx.StaticText(
-			self, label=_("Speech rate in words per minute (38–1796):")
+			self, label=_("Speech rate in words per minute (30–1920):")
 		)
 		sizer.Add(wpm_label, 0, wx.LEFT | wx.RIGHT, 10)
 		self.wpm_value = wx.SpinCtrl(
 			self,
-			min=38,
-			max=1796,
-			initial=self.synth._rateWpm if self.synth else 190,
+			min=MIN_WPM,
+			max=MAX_WPM,
+			initial=_whole(self.synth._rateWpm, MIN_WPM, MAX_WPM) if self.synth else 190,
 		)
 		self.wpm_value.SetName(wpm_label.GetLabelText())
 		sizer.Add(self.wpm_value, 0, wx.ALL, 10)
@@ -125,7 +141,7 @@ class KlattaraSettingsPanel(SettingsPanel):
 		self.wpm_value.Enable(bool(synth) and self.wpm_mode.GetValue())
 		if not self._updating and synth:
 			value = self.wpm_value.GetValue()
-			if isinstance(value, int) and 38 <= value <= 1796:
+			if isinstance(value, int) and MIN_WPM <= value <= MAX_WPM:
 				synth.configure_rate_wpm(bool(self.wpm_mode.GetValue()), value)
 				self.wpm_dirty = True
 		event.Skip()
@@ -140,10 +156,10 @@ class KlattaraSettingsPanel(SettingsPanel):
 		if self.current_synth():
 			self._updating = True
 			try:
-				self.pitch_hz_mode.SetValue(self.synth._pitchInHertz)
-				self.pitch_hz_value.SetValue(self.synth._pitchHertz)
-				self.wpm_mode.SetValue(self.synth._rateInWpm)
-				self.wpm_value.SetValue(self.synth._rateWpm)
+				self.pitch_hz_mode.SetValue(bool(self.synth._pitchInHertz))
+				self.pitch_hz_value.SetValue(_whole(self.synth._pitchHertz, 40, 550))
+				self.wpm_mode.SetValue(bool(self.synth._rateInWpm))
+				self.wpm_value.SetValue(_whole(self.synth._rateWpm, MIN_WPM, MAX_WPM))
 			finally:
 				self._updating = False
 			self.enable_controls(True)
@@ -151,7 +167,7 @@ class KlattaraSettingsPanel(SettingsPanel):
 	def onSave(self):
 		if self.current_synth():
 			if self.pitch_dirty:
-				# Clamp, never refuse: a value typed past the ends (30 or 1920
+				# Clamp, never refuse: a value typed past the ends (20 or 2000
 				# words per minute, say) must not raise and leave OK dead.
 				# The spin control itself holds the typed value until it loses
 				# focus, so OK can arrive while it is still out of range.
@@ -160,7 +176,7 @@ class KlattaraSettingsPanel(SettingsPanel):
 					self.pitch_hz_mode.GetValue(), value
 				)
 			if self.wpm_dirty:
-				value = max(38, min(1796, self.wpm_value.GetValue()))
+				value = max(MIN_WPM, min(MAX_WPM, self.wpm_value.GetValue()))
 				self.synth.configure_rate_wpm(
 					self.wpm_mode.GetValue(), value
 				)

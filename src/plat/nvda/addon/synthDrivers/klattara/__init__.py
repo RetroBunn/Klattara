@@ -109,9 +109,11 @@ MIN_RATE, NORMAL_RATE, MAX_RATE = 29, 100, 500
 # own [:speed] command does it. The rate is NOT words per minute divided by
 # 190: the engine's speech.rs measures it at eleven points and interpolates
 # between them, so 380 is 1.87 and 95 is 0.54, not 2.0 and 0.5. The slowest
-# is 38 words per minute and the fastest 1796, the engine's slowest and
-# fastest rates (0.25 and 8.0). Below 38 and above 1796 it clamps.
+# is 30 words per minute and the fastest 1920, the engine's slowest and
+# fastest rates (0.2032 and 8.5276, measured). Below 30 and above 1920 it
+# clamps. This must be the engine's table exactly: the driver tests compare.
 WPM_TABLE = (
+	(30.0, 0.2032),
 	(38.0, 0.25),
 	(87.0, 0.5),
 	(138.0, 0.75),
@@ -123,16 +125,17 @@ WPM_TABLE = (
 	(1094.0, 5.0),
 	(1326.0, 6.0),
 	(1796.0, 8.0),
+	(1920.0, 8.5276),
 )
 NORMAL_WPM = 190
-MIN_WPM = 38
-MAX_WPM = 1796
+MIN_WPM = 30
+MAX_WPM = 1920
 
 
 def _rateForWpm(wpm):
 	"""The engine rate multiplier for a words-per-minute rate, as the engine's
 	own rate_for_words_per_minute does it: piecewise linear through its
-	measured table, clamped to 38-1796 words per minute."""
+	measured table, clamped to 30-1920 words per minute."""
 	wpm = min(MAX_WPM, max(MIN_WPM, wpm))
 	for i in range(1, len(WPM_TABLE)):
 		if wpm <= WPM_TABLE[i][0]:
@@ -142,6 +145,20 @@ def _rateForWpm(wpm):
 	return WPM_TABLE[-1][1]
 # Pitch: the base pitch in Hz; what the engine accepts.
 MIN_PITCH, NORMAL_PITCH, MAX_PITCH = 40, 110, 550
+
+
+def _wholeHertz(value):
+	"""A base pitch as NVDA's configuration keeps it: a whole number of hertz,
+	40 to 550. The library gives a voice's pitch as a float (210.0), and NVDA
+	refuses a float for an integer setting when it saves: that raised out of
+	saveSettings and left the settings dialog's OK and Apply doing nothing."""
+	return int(min(MAX_PITCH, max(MIN_PITCH, round(value))))
+
+
+def _wholeWpm(value):
+	"""A words-per-minute rate as NVDA's configuration keeps it: a whole
+	number, 30 to 1920."""
+	return int(min(MAX_WPM, max(MIN_WPM, round(value))))
 # Inflection: percent of normal pitch movement, like DECtalk's pitch range.
 MIN_INFLECTION, NORMAL_INFLECTION, MAX_INFLECTION = 0, 100, 250
 # Volume: percent of full volume.
@@ -492,6 +509,17 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 		finally:
 			self._loadingSettings = False
 
+	def saveSettings(self):
+		# NVDA checks every value against its setting's spec as it saves, and a
+		# value it refuses raises out of here: the settings dialog's OK and
+		# Apply then do nothing, in the Klattara panel and in Speech settings
+		# alike, since NVDA saves every panel at once. The precise pitch and
+		# rate are plain attributes that several paths set, so make sure they
+		# are whole and in range before NVDA sees them.
+		self._pitchHertz = _wholeHertz(self._pitchHertz)
+		self._rateWpm = _wholeWpm(self._rateWpm)
+		super().saveSettings()
+
 	def _ensureAudio(self):
 		"""Makes the engine and the player at the chosen sample rate, or
 		remakes them when the rate has changed. Only the speech thread calls
@@ -577,7 +605,9 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 		# turning it on later starts at the new voice's own pitch. When it is
 		# on, the hertz value is absolute and stays, as in Reloq-C.
 		if not getattr(self, "_pitchInHertz", False):
-			self._pitchHertz = self._lib.klattara_voice_pitch(voice)
+			# Whole hertz, as NVDA saves it and the panel's spin control shows
+			# it: the library's float made both refuse it (see _wholeHertz).
+			self._pitchHertz = _wholeHertz(self._lib.klattara_voice_pitch(voice))
 		self._inflection = self._paramToPercent(
 			self._lib.klattara_voice_inflection(voice) * 100,
 			MIN_INFLECTION,
@@ -627,7 +657,7 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 
 	def configure_rate_wpm(self, enabled, value):
 		"""The exact rate, as the Klattara settings panel applies it live.
-		Raises ValueError for anything outside 38 to 1796 words per minute."""
+		Raises ValueError for anything outside 30 to 1920 words per minute."""
 		if type(enabled) is not bool or type(value) is not int or not MIN_WPM <= value <= MAX_WPM:
 			raise ValueError("invalid WPM rate setting")
 		self._rateWpm, self._rateInWpm = value, enabled

@@ -62,6 +62,27 @@ class Widget:
         pass
 
 
+class SpinCtrl(Widget):
+    """wx.SpinCtrl as wxPython 4 on Python 3.10 and later has it: its value is
+    an int, and a float, even a whole one such as 210.0, is refused with
+    TypeError ("arguments did not match any overloaded call"), both as
+    initial= and by SetValue. Checked against wxPython 4.3.2 on Python 3.11."""
+
+    def __init__(self, *args, **kwargs):
+        if "initial" in kwargs:
+            self._check(kwargs["initial"])
+        super().__init__(*args, **kwargs)
+
+    @staticmethod
+    def _check(value):
+        if not isinstance(value, int):
+            raise TypeError(f"SpinCtrl: arguments did not match any overloaded call: {value!r}")
+
+    def SetValue(self, value):
+        self._check(value)
+        super().SetValue(value)
+
+
 def module(name, **values):
     result = types.ModuleType(name)
     vars(result).update(values)
@@ -88,11 +109,19 @@ class Synth:
         self._pitchHertz, self._pitchInHertz = value, enabled
 
     def configure_rate_wpm(self, enabled, value):
-        if type(enabled) is not bool or type(value) is not int or not 38 <= value <= 1796:
+        if type(enabled) is not bool or type(value) is not int or not 30 <= value <= 1920:
             raise ValueError("invalid WPM rate setting")
         self._rateWpm, self._rateInWpm = value, enabled
 
     def saveSettings(self):
+        # NVDA's configuration checks each value against its spec as it is
+        # saved, integer(min, max) for these two, and refuses a float or a
+        # value out of range. A refusal raises out of the panel's onSave, and
+        # then the dialog's OK and Apply do nothing.
+        for name, low, high in (("_pitchHertz", 40, 550), ("_rateWpm", 30, 1920)):
+            value = getattr(self, name)
+            if not isinstance(value, int) or not low <= value <= high:
+                raise ValueError(f'the value "{value}" of {name} is refused by NVDA\'s configuration')
         self.saved = True
 
 
@@ -125,7 +154,7 @@ def main():
         Dialog=Widget,
         StaticText=Widget,
         CheckBox=Widget,
-        SpinCtrl=Widget,
+        SpinCtrl=SpinCtrl,
         Choice=Widget,
         ListBox=Widget,
         BoxSizer=Widget,
@@ -190,7 +219,7 @@ def main():
         "the pitch input is labelled with its exact range",
     )
     check(
-        panel.wpm_value.name == "Speech rate in words per minute (38–1796):",
+        panel.wpm_value.name == "Speech rate in words per minute (30–1920):",
         "the rate input is labelled with its exact range",
     )
     # Live preview: checking the box applies at once, without saving.
@@ -246,12 +275,12 @@ def main():
     # OK must never die on a value typed past the ends: it clamps. A valid
     # value applied live, then an out-of-range value typed before OK, leaves
     # the changed flag set with an out-of-range value in the control.
-    panel.wpm_value.SetValue(30)
+    panel.wpm_value.SetValue(20)
     panel.wpm_dirty = True
     panel.pitch_hz_value.SetValue(600)
     panel.pitch_dirty = True
     panel.onSave()
-    check(synth._rateWpm == 38, "OK clamps a rate below 38 up to 38")
+    check(synth._rateWpm == 30, "OK clamps a rate below 30 up to 30")
     check(synth._pitchHertz == 550, "OK clamps a pitch above 550 down to 550")
     # Activating the panel shows it: NVDA hides the panel when the category
     # is left, and the base onPanelActivated is what shows it again. Without
@@ -275,6 +304,59 @@ def main():
     check(
         not panel.pitch_hz_mode.GetValue() and not panel.pitch_hz_value.enabled,
         "activating the panel shows the hertz mode as off",
+    )
+    # Regression (1.9.3): the stuck OK and Apply, and the panel showing
+    # unrelated values. Choosing a voice with hertz pitch off used to leave
+    # the voice's pitch in the synth as the library's float (210.0 for
+    # Brittany). The spin control refuses a float, so building or refreshing
+    # the panel raised part way, leaving the rate controls with old values;
+    # and NVDA's configuration refuses it too, so saving raised and OK did
+    # nothing. The panel must show whole numbers whatever the synth holds.
+    synth._pitchInHertz, synth._pitchHertz = False, 210.0
+    synth._rateInWpm, synth._rateWpm = True, 1920
+    panel = plugin.KlattaraSettingsPanel()
+    panel.makeSettings(Widget())
+    check(panel.pitch_hz_value.GetValue() == 210, "the panel builds when the synth holds a voice's pitch as a float")
+    panel.onPanelActivated()
+    check(
+        (panel.pitch_hz_mode.GetValue(), panel.pitch_hz_value.GetValue(), panel.wpm_mode.GetValue(), panel.wpm_value.GetValue())
+        == (False, 210, True, 1920),
+        "tabbing through the panel shows the values that were set, the rate at its top end",
+    )
+    synth._rateWpm = 30
+    panel.onPanelActivated()
+    check(panel.wpm_value.GetValue() == 30, "and the rate at its bottom end")
+    # The fixed driver keeps the pitch whole; OK with values typed past both
+    # ends of both ranges, after a voice change, saves and lets the dialog close.
+    synth._pitchHertz = 210
+    for typed_rate, typed_pitch, rate, pitch in ((20, 30, 30, 40), (2000, 600, 1920, 550), (30, 40, 30, 40), (1920, 550, 1920, 550)):
+        panel.wpm_mode.SetValue(True)
+        panel.wpm_value.SetValue(typed_rate)
+        panel.wpm_dirty = True
+        panel.pitch_hz_mode.SetValue(True)
+        panel.pitch_hz_value.SetValue(typed_pitch)
+        panel.pitch_dirty = True
+        synth.saved = False
+        panel.onSave()
+        check(
+            synth.saved and (synth._rateWpm, synth._pitchHertz) == (rate, pitch),
+            f"OK saves after {typed_rate} words per minute and {typed_pitch} Hz were typed: {rate} and {pitch}",
+        )
+        panel.onPanelActivated()
+        check(
+            (panel.wpm_value.GetValue(), panel.pitch_hz_value.GetValue()) == (rate, pitch),
+            "reopening the panel shows what was saved",
+        )
+    # Cancel restores what was saved, without raising, even from a float.
+    synth._pitchInHertz, synth._pitchHertz = False, 78.0
+    panel = plugin.KlattaraSettingsPanel()
+    panel.makeSettings(Widget())
+    panel.pitch_hz_mode.SetValue(True)
+    panel.on_pitch_changed(Widget())
+    panel.onDiscard()
+    check(
+        (synth._pitchInHertz, synth._pitchHertz) == (False, 78),
+        "Cancel restores the hertz pitch as a whole number",
     )
     # Without Klattara as the synthesizer, the panel says so and disables
     # its controls.
