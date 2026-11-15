@@ -191,7 +191,10 @@ fn synth_settings(voice: &Voice) -> VoiceSettings {
 /// of mixed lengths. Speech isn't quite in proportion to the rate, since pauses shrink
 /// faster than words do: rate 3 is 634 words per minute, not 3 times 190. Short sentences
 /// run slower than this, and long ones with few pauses faster.
-const WORDS_PER_MINUTE: [(f64, f64); 11] = [
+const WORDS_PER_MINUTE: [(f64, f64); 13] = [
+    // 30 and 1920 words per minute: the rates found by measuring this paragraph,
+    // to round out the range past 38 and 1796.
+    (30.0, 0.2032),
     (38.0, 0.25),
     (87.0, 0.5),
     (138.0, 0.75),
@@ -203,12 +206,16 @@ const WORDS_PER_MINUTE: [(f64, f64); 11] = [
     (1094.0, 5.0),
     (1326.0, 6.0),
     (1796.0, 8.0),
+    (1920.0, 8.5276),
 ];
 
 /// The slowest and fastest speeds, in words per minute: the engine's slowest and fastest
 /// rates.
 pub const SLOWEST_WPM: f64 = WORDS_PER_MINUTE[0].0;
 pub const FASTEST_WPM: f64 = WORDS_PER_MINUTE[WORDS_PER_MINUTE.len() - 1].0;
+/// The slowest and fastest rates, the ends of the table: nothing outside them is spoken.
+pub const SLOWEST_RATE: f64 = WORDS_PER_MINUTE[0].1;
+pub const FASTEST_RATE: f64 = WORDS_PER_MINUTE[WORDS_PER_MINUTE.len() - 1].1;
 
 /// The rate that speaks at about this many words per minute.
 pub fn rate_for_words_per_minute(wpm: f64) -> f64 {
@@ -284,7 +291,7 @@ fn batches(phrases: Vec<Phrase>) -> Vec<Vec<Phrase>> {
 
 /// Plans speech at the voice's rate.
 fn plan(phrases: &[Phrase], voice: &Voice) -> Vec<(f64, Frame)> {
-    let (segments, compression) = timeline(phrases, voice.rate.clamp(0.25, 8.0));
+    let (segments, compression) = timeline(phrases, voice.rate.clamp(SLOWEST_RATE, FASTEST_RATE));
     let pitch = shaped_keyframes(&segments, voice.pitch, voice.inflection, &voice.pitch_shape);
     let frames = tracks::frames(&segments, &pitch, voice);
     if segments.iter().all(|s| s.written.duration.is_none()) {
@@ -455,7 +462,7 @@ mod tests {
             the roof had begun to fall in. We walked around it twice. Was anyone still living nearby? We could not \
             tell. In the end we went home, tired and hungry. The next day it rained; we stayed inside and read.";
         let words = paragraph.split_whitespace().count() as f64;
-        for wpm in [50.0, 100.0, 190.0, 250.0, 350.0, 450.0, 600.0, 800.0, 1000.0, 1500.0] {
+        for wpm in [30.0, 34.0, 50.0, 100.0, 190.0, 250.0, 350.0, 450.0, 600.0, 800.0, 1000.0, 1500.0, 1850.0, 1920.0] {
             let frames = text_frames(&format!("[:speed {wpm}]{paragraph}"), &Voice::default());
             let measured = words / frames.last().unwrap().0 * 60_000.0;
             assert!((measured / wpm - 1.0).abs() < 0.05, "asked for {wpm}, got {measured:.0}");
@@ -465,11 +472,14 @@ mod tests {
     #[test]
     fn the_normal_speed_is_the_normal_rate() {
         assert_eq!(rate_for_words_per_minute(190.0), 1.0);
-        assert_eq!(rate_for_words_per_minute(SLOWEST_WPM), 0.25);
-        assert_eq!(rate_for_words_per_minute(FASTEST_WPM), 8.0);
-        assert_eq!(rate_for_words_per_minute(1.0), 0.25);
-        assert_eq!(rate_for_words_per_minute(9999.0), 8.0);
-        let rates: Vec<f64> = (40..1800).step_by(10).map(|wpm| rate_for_words_per_minute(f64::from(wpm))).collect();
+        assert_eq!((SLOWEST_WPM, FASTEST_WPM), (30.0, 1920.0));
+        assert_eq!(rate_for_words_per_minute(SLOWEST_WPM), SLOWEST_RATE);
+        assert_eq!(rate_for_words_per_minute(FASTEST_WPM), FASTEST_RATE);
+        assert_eq!(rate_for_words_per_minute(1.0), SLOWEST_RATE);
+        assert_eq!(rate_for_words_per_minute(9999.0), FASTEST_RATE);
+        assert_eq!(rate_for_words_per_minute(38.0), 0.25);
+        assert_eq!(rate_for_words_per_minute(1796.0), 8.0);
+        let rates: Vec<f64> = (30..=1920).step_by(10).map(|wpm| rate_for_words_per_minute(f64::from(wpm))).collect();
         assert!(rates.windows(2).all(|pair| pair[1] > pair[0]));
     }
 

@@ -96,7 +96,7 @@ On 32-bit Windows, the functions and the audio callback use the C calling conven
 - `klattara_voice_gender(index)` returns a voice's gender, `KLATTARA_MALE` or `KLATTARA_FEMALE`, or `KLATTARA_INVALID` if there is no such voice.
 - `klattara_set_voice(engine, index)` changes to a voice: its gender, pitch, inflection and voice quality. Rate, volume and how text is read stay as they are.
 - `klattara_set_gender(engine, gender)` sets which model of the vocal tract the current voice uses, for making a voice of your own. Nothing else changes, so set the pitch as well.
-- `klattara_set_rate(engine, rate)` sets the speaking rate. 1.0 is normal and 2.0 twice as fast. The range is 0.25 to 8.
+- `klattara_set_rate(engine, rate)` sets the speaking rate. 1.0 is normal and 2.0 twice as fast. The range is 0.2032 to 8.5276, which is 30 to 1920 words per minute.
 - `klattara_set_pitch(engine, hz)` sets the base pitch, 40 to 550 Hz. Each voice has its own default, 110 for Steve, 210 for Brittany, 78 for Gary, 138 for David and 270 for Taylor.
 - `klattara_set_inflection(engine, inflection)` sets the pitch movement, from 0 for a monotone through 1 for normal, up to 2.5. Each voice has its own default, 1 for both Steve and Brittany, 0.85 for Gary, 0.8 for David and 1.15 for Taylor.
 - `klattara_set_volume(engine, volume)` sets the volume, from 0 for silence through 1 for normal, up to 2.
@@ -182,7 +182,7 @@ F1 to F3 change with every sound, so they have no settings. F4 to F6 stay put, w
 
 Three more commands don't depend on the voice, so a change of voice leaves them as they are, along with phoneme input and the vibrato settings below:
 
-- `[:speed 400]` or `[:spd 400]` sets the speed, in words per minute, from 38 to 1796. That is the pace on ordinary text: short sentences run slower than the number, and long ones with few pauses faster.
+- `[:speed 400]` or `[:spd 400]` sets the speed, in words per minute, from 30 to 1920. That is the pace on ordinary text: short sentences run slower than the number, and long ones with few pauses faster.
 - `[:volume 50]` sets the volume as a percentage, from 0 to 200, where 100 is normal.
 - `[:reset]` returns every setting to how an engine starts, including the voice, speed, volume, vibrato, phoneme input, and the settings for abbreviations and phrase prediction.
 

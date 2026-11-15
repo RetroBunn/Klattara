@@ -194,13 +194,13 @@ unsafe fn set(
 }
 
 /// Sets the speaking rate: 1.0 is about 200 words per minute, 2.0 twice as
-/// fast. Valid from 0.25 to 8.
+/// fast. Valid from about 0.2 to 8.5 (30 to 1920 words per minute).
 ///
 /// # Safety
 /// `engine` must be null or a live engine from [`klattara_create`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn klattara_set_rate(engine: *mut KlattaraEngine, rate: f64) -> c_int {
-    unsafe { set(engine, rate, 0.25..=8.0, |voice, value| voice.rate = value) }
+    unsafe { set(engine, rate, engine::SLOWEST_RATE..=engine::FASTEST_RATE, |voice, value| voice.rate = value) }
 }
 
 /// Sets the base pitch in Hz, from 40 to 550. Each voice has its own default,

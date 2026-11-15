@@ -42,7 +42,8 @@ pub use frame::{Frame, NUM_FORMANTS};
 pub use lts::JointModel;
 pub use phoneme::{Phoneme, Stress};
 pub use speech::{
-    Reading, Voice, phoneme_frames, speak_phonemes, speak_text, speak_with, text_frames, transcribe, transcribe_with,
+    FASTEST_RATE, FASTEST_WPM, Reading, SLOWEST_RATE, SLOWEST_WPM, Voice, phoneme_frames, speak_phonemes, speak_text,
+    speak_with, text_frames, transcribe, transcribe_with,
 };
 pub use synth::{Synth, VoiceSettings};
 pub use utterance::ParseError;

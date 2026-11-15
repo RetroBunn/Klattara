@@ -501,12 +501,12 @@ mod tests {
         let low = after("[:vibspeed -1][:vibdepth -1][:vibdelay -1][:volume -1][:speed 1]");
         assert_eq!(
             (low.vibrato_speed, low.vibrato_depth, low.vibrato_delay, low.volume, low.rate),
-            (0.0, 0.0, 0.0, 0.0, 0.25)
+            (0.0, 0.0, 0.0, 0.0, 0.2032)
         );
         let high = after("[:vibspeed 999][:vibdepth 999][:vibdelay 99999][:volume 999][:speed 99999]");
         assert_eq!(
             (high.vibrato_speed, high.vibrato_depth, high.vibrato_delay, high.volume, high.rate),
-            (20.0, 200.0, 5000.0, 2.0, 8.0)
+            (20.0, 200.0, 5000.0, 2.0, 8.5276)
         );
     }
 
