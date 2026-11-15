@@ -46,6 +46,12 @@ else:
 events = []
 lock = threading.Lock()
 
+# The rates the driver must offer, in Hz: every rate the engine is tuned for.
+EXPECTED_SAMPLE_RATES = (
+    8000, 10000, 11000, 11025, 12000, 16000, 20000, 22000, 22050, 24000,
+    32000, 40000, 44000, 44100, 48000, 64000, 80000, 88000, 88200, 96000,
+)
+
 
 def record(*event):
     with lock:
@@ -91,8 +97,10 @@ class WavePlayer:
     """Stands in for nvwave.WavePlayer, with the same signature."""
 
     def __init__(self, channels, samplesPerSec, bitsPerSample, outputDevice="default", wantDucking=True, purpose=None):
-        assert (channels, samplesPerSec, bitsPerSample) == (1, 22050, 16)
+        assert (channels, bitsPerSample) == (1, 16)
+        assert samplesPerSec in EXPECTED_SAMPLE_RATES
         assert outputDevice == config.conf["audio"]["outputDevice"]
+        record("playerRate", samplesPerSec)
 
     def feed(self, data, size=None, onDone=None):
         record("audio", size if size is not None else len(data))
@@ -101,6 +109,10 @@ class WavePlayer:
 
     def idle(self):
         pass
+
+    def enableTrimmingLeadingSilence(self, enable):
+        self.trimming = enable
+        record("trimming", enable)
 
     def stop(self):
         record("stop")
@@ -170,7 +182,7 @@ def check_stand_ins_match_nvda():
     expected = ["self", "channels", "samplesPerSec", "bitsPerSample", "outputDevice"]
     check(methods["__init__"][:5] == expected, f"NVDA's player opens as the driver expects: {methods['__init__']}")
     check(methods["feed"][:4] == ["self", "data", "size", "onDone"], f"NVDA's player is fed as the driver expects: {methods['feed']}")
-    check({"idle", "stop", "pause", "close"} <= methods.keys(), "NVDA's player has the other methods the driver calls")
+    check({"idle", "stop", "pause", "close", "enableTrimmingLeadingSilence"} <= methods.keys(), "NVDA's player has the other methods the driver calls")
     config_spec = (NVDA_SOURCE / "config" / "configSpec.py").read_text(encoding="utf-8")
     check("[audio]\n\toutputDevice" in config_spec, "NVDA keeps the output device in its audio settings")
     # The pitch slider moves with the voice only if NVDA looks at the settings again
@@ -179,6 +191,13 @@ def check_stand_ins_match_nvda():
     check("self.container.updateDriverSettings(changedSetting=self.setting.id)" in dialogs, "NVDA's dialog updates its sliders after a change of voice")
     ring = (NVDA_SOURCE / "synthSettingsRing.py").read_text(encoding="utf-8")
     check("self.synth.saveSettings()" in ring, "NVDA's settings ring saves the settings after a change of voice")
+    # A plain DriverSetting is shown as a combo box, with its options from
+    # available{Id}s on the driver: that is how the sample rate is offered.
+    check(
+        'f"available{setting.id.capitalize()}s"' in dialogs
+        and "settingMaker = self._makeStringSettingControl" in dialogs,
+        "NVDA's dialog shows a plain setting as a combo box from available{Id}s",
+    )
 
 
 def wait_for(kind, timeout=10.0):
@@ -248,6 +267,89 @@ def main():
         specs["phrasePrediction"] == "boolean(default=False)",
         f"phrase prediction is off by default: {specs['phrasePrediction']}",
     )
+    # The voice-quality settings: flutter is off, the rest default to the
+    # first voice's own values.
+    check(specs["flutter"] == "integer(default=0,min=0,max=100)", f"flutter is off by default: {specs['flutter']}")
+    check(
+        specs["headSize"] == "integer(default=100,min=64,max=135)",
+        f"head size defaults to Steve's 100: {specs['headSize']}",
+    )
+    check(
+        specs["roughness"] == "integer(default=0,min=0,max=100)",
+        f"roughness defaults to Steve's 0: {specs['roughness']}",
+    )
+    check(
+        specs["breathiness"] == "integer(default=0,min=0,max=72)",
+        f"breathiness defaults to Steve's 0: {specs['breathiness']}",
+    )
+    check(
+        specs["openQuotient"] == "integer(default=55,min=20,max=90)",
+        f"open quotient defaults to Steve's 55: {specs['openQuotient']}",
+    )
+    check(
+        specs["smoothness"] == "integer(default=0,min=0,max=100)",
+        f"smoothness defaults to Steve's 0: {specs['smoothness']}",
+    )
+    check(
+        specs["femaleVocalTract"] == "boolean(default=False)",
+        f"the female vocal tract is off by default: {specs['femaleVocalTract']}",
+    )
+    check(
+        specs["baselineFall"] == "integer(default=18,min=0,max=90)",
+        f"baseline fall defaults to Steve's 18: {specs['baselineFall']}",
+    )
+    check(
+        specs["hatRise"] == "integer(default=18,min=0,max=100)",
+        f"hat rise defaults to Steve's 18: {specs['hatRise']}",
+    )
+    check(
+        specs["stressRise"] == "integer(default=32,min=0,max=100)",
+        f"stress rise defaults to Steve's 32: {specs['stressRise']}",
+    )
+    check(
+        specs["quickness"] == "integer(default=40,min=0,max=100)",
+        f"quickness defaults to Steve's 40: {specs['quickness']}",
+    )
+    check(
+        specs["laxBreathiness"] == "integer(default=0,min=0,max=100)",
+        f"lax breathiness defaults to Steve's 0: {specs['laxBreathiness']}",
+    )
+    check(
+        specs["sampleRate"] == "string(default=22050)",
+        f"the sample rate is a choice defaulting to 22050 Hz: {specs['sampleRate']}",
+    )
+    check(
+        specs["_pitchHertz"] == "integer(default=110,min=40,max=550)",
+        f"pitch in hertz spans the engine's 40 to 550 Hz: {specs['_pitchHertz']}",
+    )
+    check(
+        specs["_pitchInHertz"] == "boolean(default=False)",
+        f"pitch in hertz is off by default: {specs['_pitchInHertz']}",
+    )
+    check(
+        specs["_rateWpm"] == "integer(default=190,min=38,max=1796)",
+        f"rate in words per minute spans 38 to 1796: {specs['_rateWpm']}",
+    )
+    check(
+        specs["_rateInWpm"] == "boolean(default=False)",
+        f"rate in words per minute is off by default: {specs['_rateInWpm']}",
+    )
+    check(
+        all(s.id.startswith("_") for s in (
+            SynthDriver._rateWpmSetting, SynthDriver._rateInWpmSetting,
+            SynthDriver._pitchHertzSetting, SynthDriver._pitchInHertzSetting,
+        )),
+        "the precise pitch and rate are hidden from Speech settings: their ids start with an underscore, so NVDA's dialog skips them and the Klattara panel owns them",
+    )
+    check(
+        isinstance(SynthDriver._sampleRateSetting, driver.DriverSetting)
+        and not isinstance(SynthDriver._sampleRateSetting, driver.NumericDriverSetting),
+        "the sample rate is a plain setting, so NVDA shows it as a combo box, not a slider",
+    )
+    check(
+        tuple(driver.SAMPLE_RATES) == EXPECTED_SAMPLE_RATES,
+        f"the driver offers the twenty supported rates: {driver.SAMPLE_RATES}",
+    )
 
     check(specs["voice"] == "string(default=None)", f"the voice is a setting NVDA keeps: {specs['voice']}")
 
@@ -268,11 +370,52 @@ def main():
         check(order == [("index", 1), ("index", 2), ("done", None)], f"index marks arrive in order: {order}")
         normal = audio_bytes()
         check(normal > 22050, f"audio was played ({normal} bytes)")
+        check(
+            synth._player.trimming is False,
+            "leading-silence trimming is off, so no utterance loses its beginning",
+        )
 
         # A faster rate gives less audio for the same text.
         synth.rate = 50
         fast = speak_and_measure(synth, ["Hello, world.  ", "This is Klattara.  "])
         check(fast < 0.5 * normal, f"rate 50 is much shorter ({fast} against {normal} bytes)")
+        synth.rate = 15
+
+        # No utterance is cut off, whatever the voice, the rate, or the
+        # sample rate: speaking a text twice gives twice the audio of
+        # speaking it once, and a faster rate gives less audio but never
+        # less than the rate says it should. A truncated utterance would
+        # break the doubling, whatever cut it off.
+        cutoff_text = "Hello, world. This is Klattara, a speech synthesizer. "
+        for voice in ("steve", "brittany", "gary", "david", "taylor"):
+            synth.voice = voice
+            base = None
+            for rate in (15, 50, 100):
+                synth.rate = rate
+                once = speak_and_measure(synth, [cutoff_text])
+                twice = speak_and_measure(synth, [cutoff_text + cutoff_text])
+                check(
+                    1.9 < twice / once < 2.1,
+                    f"{voice} at rate {rate}: a doubled text is doubled audio ({twice} against {once} bytes)",
+                )
+                if base is None:
+                    base = once
+                elif rate == 50:
+                    check(
+                        once < 0.5 * base,
+                        f"{voice} at rate 50 is much shorter than at rate 15 ({once} against {base} bytes)",
+                    )
+        synth.voice = "steve"
+        synth.rate = 50
+        for sample_rate in EXPECTED_SAMPLE_RATES:
+            synth.sampleRate = str(sample_rate)
+            once = speak_and_measure(synth, [cutoff_text])
+            twice = speak_and_measure(synth, [cutoff_text + cutoff_text])
+            check(
+                1.9 < twice / once < 2.1,
+                f"Steve at rate 50 and {sample_rate} Hz: a doubled text is doubled audio ({twice} against {once} bytes)",
+            )
+        synth.sampleRate = "22050"
         synth.rate = 15
 
         # Cancelling stops at once: no more index marks, no done.
@@ -314,6 +457,85 @@ def main():
         speak_and_measure(synth, [commands.PitchCommand(offset=200), "A"])
         check(pitches == [550], f"a pitch beyond the slider is limited to the engine's 550 Hz: {pitches}")
         synth._lib.klattara_set_pitch = set_pitch
+
+        # Precise pitch in hertz and precise rate in words per minute, as
+        # Reloq-C does them: a value and a check box for each. When the mode
+        # is on, the exact value reaches the engine; moving the normal slider
+        # switches the mode off again, but loading settings does not.
+        old_rate, old_pitch = synth.rate, synth.pitch
+        set_rate = synth._lib.klattara_set_rate
+        rates = []
+        synth._lib.klattara_set_rate = lambda engine, mult: rates.append(mult) or set_rate(engine, mult)
+        synth._lib.klattara_set_pitch = lambda engine, hz: pitches.append(hz) or set_pitch(engine, hz)
+        pitches.clear()
+        # The Klattara settings panel applies these through configure_*; the
+        # values are plain attributes, not properties, as in Reloq-C.
+        synth.configure_pitch_hertz(True, 150)
+        synth.configure_rate_wpm(True, 380)
+        speak_and_measure(synth, ["Hello.  "])
+        check(pitches == [150], f"hertz pitch sends exactly 150 Hz: {pitches}")
+        # The rate is the engine's measured table, not words per minute
+        # divided by 190: 380 is 1.87, 95 is 0.54, 190 is 1.0.
+        check(abs(rates[0] - 1.869) < 0.01, f"380 words per minute is 1.87 times normal: {rates}")
+        pitches.clear()
+        rates.clear()
+        synth.configure_rate_wpm(True, 95)
+        speak_and_measure(synth, ["Hello.  "])
+        check(abs(rates[0] - 0.539) < 0.01, f"95 words per minute is 0.54 times normal: {rates}")
+        pitches.clear()
+        rates.clear()
+        synth.configure_rate_wpm(True, 190)
+        speak_and_measure(synth, ["Hello.  "])
+        check(rates == [1.0], f"190 words per minute is the normal rate: {rates}")
+        pitches.clear()
+        rates.clear()
+        synth.configure_rate_wpm(True, 38)
+        speak_and_measure(synth, ["Hello.  "])
+        check(rates == [0.25], f"38 words per minute is the slowest rate: {rates}")
+        pitches.clear()
+        rates.clear()
+        synth.configure_rate_wpm(True, 1600)
+        speak_and_measure(synth, ["Hello.  "])
+        check(abs(rates[0] - 7.166) < 0.01, f"1600 words per minute is 7.17 times normal: {rates}")
+        pitches.clear()
+        rates.clear()
+        synth.configure_rate_wpm(True, 1796)
+        speak_and_measure(synth, ["Hello.  "])
+        check(rates == [8.0], f"1796 words per minute is the fastest rate: {rates}")
+        # Out of range is refused, not clamped silently.
+        for bad in (lambda: synth.configure_rate_wpm(True, 30), lambda: synth.configure_rate_wpm(True, 1797),
+                    lambda: synth.configure_pitch_hertz(True, 39), lambda: synth.configure_pitch_hertz(True, 551)):
+            try:
+                bad()
+                check(False, "an out-of-range precise value is refused")
+            except ValueError:
+                pass
+        check(True, "out-of-range precise values are refused")
+        # The table was verified against the engine's own [:speed] command:
+        # the driver and [:speed] give byte-identical audio at 38, 95, 190,
+        # 380, 400, 1600 and 1796 words per minute. That check cannot live
+        # here, because the driver's speak strips [: commands from screen text.
+        synth._rateInWpm = False
+        # Moving a slider switches its precise mode off; loading settings does not.
+        synth.pitch = 50
+        check(not synth._pitchInHertz, "moving the pitch slider switches hertz pitch off")
+        synth.rate = 50
+        check(not synth._rateInWpm, "moving the rate slider switches words-per-minute rate off")
+        synth._pitchInHertz = True
+        synth._rateInWpm = True
+        synth._loadingSettings = True
+        synth.pitch = 50
+        synth.rate = 50
+        check(synth._pitchInHertz and synth._rateInWpm, "loading settings leaves the precise modes on")
+        synth._loadingSettings = False
+        # The hertz value follows the voice while the mode is off.
+        synth._pitchInHertz = False
+        synthDriverHandler.changeVoice(synth, "gary")
+        check(synth._pitchHertz == 78, f"the hertz value follows Gary's 78 Hz: {synth._pitchHertz}")
+        synthDriverHandler.changeVoice(synth, "steve")
+        synth.rate, synth.pitch = old_rate, old_pitch
+        synth._lib.klattara_set_pitch = set_pitch
+        synth._lib.klattara_set_rate = set_rate
 
         # The voices, in the engine's order, with their names and language.
         voices = synth.availableVoices
@@ -398,6 +620,41 @@ def main():
         synth.voice = "brittany"
         check(synth.pitch == 33, f"also on choosing the voice already in use: {synth.pitch}")
 
+        # A voice brings its own quality settings, except flutter, which
+        # stays where the user put it.
+        synth.voice = "david"
+        check(
+            (
+                synth.headSize,
+                synth.roughness,
+                synth.breathiness,
+                synth.openQuotient,
+                synth.smoothness,
+                synth.baselineFall,
+                synth.hatRise,
+                synth.stressRise,
+                synth.quickness,
+                synth.laxBreathiness,
+                synth.femaleVocalTract,
+            )
+            == (94, 16, 52, 70, 28, 8, 14, 20, 6, 70, False),
+            f"David's own quality: head {synth.headSize}, roughness {synth.roughness}, breath {synth.breathiness}, "
+            f"open quotient {synth.openQuotient}, smooth {synth.smoothness}, fall {synth.baselineFall}, "
+            f"hat {synth.hatRise}, stress {synth.stressRise}, quick {synth.quickness}, lax {synth.laxBreathiness}",
+        )
+        check(synth.flutter == 0, f"flutter stays off on a change of voice: {synth.flutter}")
+        synth.flutter = 60
+        synth.voice = "brittany"
+        check(synth.flutter == 60, f"flutter stays where the user put it: {synth.flutter}")
+        check(
+            (synth.headSize, synth.breathiness, synth.openQuotient, synth.laxBreathiness, synth.femaleVocalTract)
+            == (100, 36, 65, 65, True),
+            f"so do Brittany's, with her female vocal tract: {synth.headSize}, {synth.breathiness}, "
+            f"{synth.openQuotient}, {synth.laxBreathiness}, {synth.femaleVocalTract}",
+        )
+        synth.flutter = 0
+        synth.voice = "steve"
+
         # NVDA saves the voice and the sliders, and takes them back on loading: the
         # voice first, then the saved values, which have the last word. It gets over a
         # saved voice that no longer exists, and settings saved before there were voices.
@@ -454,14 +711,93 @@ def main():
         check(phrased > whole + 1000, f"checked, a long sentence is broken into phrases ({phrased} > {whole} bytes)")
         check(config.conf["speech"]["klattara"]["phrasePrediction"] is False, "phrase prediction is saved to NVDA's configuration")
 
+        # The sample rate can change: the engine and the player are remade at
+        # it, speech still flows, and a break stays the same length in time.
+        hello = speak_and_measure(synth, ["Hello, world.  "])
+        synth.sampleRate = 44100
+        hello44100 = speak_and_measure(synth, ["Hello, world.  "])
+        check(
+            hello44100 > hello * 1.8,
+            f"speech still flows at 44100 Hz, with twice the samples ({hello44100} against {hello} bytes)",
+        )
+        with lock:
+            rates = [e[1] for e in events if e[0] == "playerRate"]
+        check(rates[-1] == 44100, f"the player was remade at 44100 Hz: {rates}")
+        plain = speak_and_measure(synth, ["one  "])
+        broken = speak_and_measure(synth, ["one  ", commands.BreakCommand(time=500)])
+        check(broken - plain == 44100, f"a 500 ms break adds half a second at 44100 Hz ({broken - plain} bytes)")
+        synth.sampleRate = 22050
+        check(
+            speak_and_measure(synth, ["Hello, world.  "]) == hello,
+            "and the same text at 22050 Hz is itself again",
+        )
+        with lock:
+            rates = [e[1] for e in events if e[0] == "playerRate"]
+        check(rates[-1] == 22050, f"and back at 22050 Hz: {rates}")
+
+        # The sample rate is a combo box, not a slider: the dialog stores the
+        # rate as its id string, and the driver offers the twenty rates.
+        # The dialog looks the rates up as f"available{id.capitalize()}s",
+        # and "sampleRate".capitalize() is "Samplerate", so the property
+        # must be availableSamplerates or the control never appears.
+        check(
+            hasattr(synth, f"available{SynthDriver._sampleRateSetting.id.capitalize()}s"),
+            "the rates are found under the name NVDA's dialog builds from the setting id",
+        )
+        check(
+            list(synth.availableSamplerates) == [str(rate) for rate in EXPECTED_SAMPLE_RATES],
+            f"the combo box offers the twenty rates: {list(synth.availableSamplerates)}",
+        )
+        check(
+            [info.displayName for info in synth.availableSamplerates.values()][:3] == ["8000 Hz", "10000 Hz", "11000 Hz"],
+            "each rate is shown with its unit",
+        )
+        synth.sampleRate = "96000"
+        check(synth.sampleRate == "96000", "the rate is kept as its id string")
+        check(
+            speak_and_measure(synth, ["Hello, world.  "]) > hello * 4,
+            "speech still flows at 96000 Hz, with four times the samples",
+        )
+        with lock:
+            rates = [e[1] for e in events if e[0] == "playerRate"]
+        check(rates[-1] == 96000, f"the player was remade at 96000 Hz: {rates}")
+        # A saved value from the old slider may be any rate at all: it lands
+        # on the nearest supported one.
+        synth.sampleRate = "15000"
+        check(synth.sampleRate == "16000", "an old value of 15000 Hz lands on 16000 Hz")
+        speak_and_measure(synth, ["Hello, world.  "])
+        with lock:
+            rates = [e[1] for e in events if e[0] == "playerRate"]
+        check(rates[-1] == 16000, f"and the player follows: {rates}")
+        synth.sampleRate = 22050
+        check(synth.sampleRate == "22050", "an integer still works, and reads back as a string")
+
         # A Klattara command in the text never reaches the engine, wherever it falls,
         # so phoneme input stays off and a page can't change how speech is read.
+        # The driver's own voice-quality command is the exception: it sends one
+        # [:cv] command itself, before each piece of text.
         sent = []
         real_speak = synth._lib.klattara_speak
         def recording_speak(engine, text, reading, callback, user):
             sent.append((text, reading))
             return real_speak(engine, text, reading, callback, user)
         synth._lib.klattara_speak = recording_speak
+
+        def own_command():
+            # The command the driver sends for the sliders as they are now.
+            # Saved values have the last word on loading, as with pitch, so
+            # these need not be the current voice's own values.
+            return (
+                f"[:cv hs {synth.headSize} rg {synth.roughness} br {synth.breathiness} "
+                f"oq {synth.openQuotient} sm {synth.smoothness} fl {synth.flutter} "
+                f"fa {synth.baselineFall} ha {synth.hatRise} st {synth.stressRise} "
+                f"qk {synth.quickness} lx {synth.laxBreathiness}]"
+            ).encode("utf-8")
+
+        def spoken():
+            """What was sent for the text itself, without the driver's own command."""
+            return [(text, reading) for text, reading in sent if not text.startswith(b"[:cv ")]
+
         word = "[HH AH0 L OW1].  "
         as_text = speak_and_measure(synth, [word])
         for sequence in (
@@ -478,16 +814,26 @@ def main():
         ):
             speak_and_measure(synth, sequence)
             check(speak_and_measure(synth, [word]) == as_text, f"phoneme input stays off after {sequence!r}")
-        check(not any(b"[:" in text for text, _ in sent), f"no command was sent to the engine: {sent}")
+        check(
+            all(text == own_command() for text, _ in sent if text.startswith(b"[:cv ")),
+            f"the driver's own command is the voice's own quality: {sent}",
+        )
+        check(
+            not any(b"[:" in text for text, _ in spoken()),
+            f"no command from the text was sent to the engine: {sent}",
+        )
         sent.clear()
         speak_and_measure(synth, ["Before [:phone klattara enable] after.  "])
-        check(sent[0][0] == b"Before  phone klattara enable] after.", f"the words of a command are still read: {sent[0][0]!r}")
+        check(
+            spoken() == [(b"Before  phone klattara enable] after.", driver.KLATTARA_READ_TEXT)],
+            f"the words of a command are still read: {spoken()!r}",
+        )
         sent.clear()
         speak_and_measure(synth, ["[:  "])
         check(not sent, "nothing is sent when only a command's opening was there")
         # Spelled text keeps its characters: the engine doesn't take commands there.
         speak_and_measure(synth, [commands.CharacterModeCommand(True), "[:", commands.CharacterModeCommand(False)])
-        check(sent == [(b"[:", driver.KLATTARA_READ_SPELLED)], f"spelled text keeps its characters: {sent}")
+        check(spoken() == [(b"[:", driver.KLATTARA_READ_SPELLED)], f"spelled text keeps its characters: {spoken()}")
         check(speak_and_measure(synth, [word]) == as_text, "and phoneme input stays off after them")
         synth._lib.klattara_speak = real_speak
 

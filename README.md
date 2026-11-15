@@ -40,12 +40,22 @@ The add-on needs NVDA 2025.1 or later, on Windows 10 or later. It works in both 
 
 You find these in NVDA's Voice settings, opened with NVDA+Control+V.
 
-1. Voice: Standard Steve, the default, Breezy Brittany, Giant Gary, Delicate David or Tiny Taylor. Each voice's pitch and inflection are stored with it, so choosing a voice sets those two sliders to that voice's values. A change you make to them lasts until you choose another voice.
-2. Rate: 15 is the normal rate, about 190 words per minute. 41 or 42 is about 430 words per minute, the fastest rate where Klattara has tested clearest so far. The slider goes up to about 950 words per minute, so there is no separate rate boost.
-3. Pitch: 14 is Steve's own pitch, 110 Hz, 33 is Brittany's, 210 Hz, 7 is Gary's, 78 Hz, 19 is David's, 138 Hz, and 45 is Taylor's, 270 Hz.
+1. Voice: Standard Steve, the default, Breezy Brittany, Giant Gary, Delicate David or Tiny Taylor. Each voice's pitch, inflection and voice quality are stored with it, so choosing a voice sets those sliders to that voice's values. A change you make to them lasts until you choose another voice. Saved values have the last word on loading, as with pitch.
+2. Rate: 15 is the normal rate, about 190 words per minute. 41 or 42 is about 430 words per minute, the fastest rate where Klattara has tested clearest so far. The slider goes up to about 950 words per minute, so there is no separate rate boost. For an exact rate, open NVDA Settings, then the Klattara category, and set "Speech rate in words per minute": 190 is the normal rate, 38 the slowest and 1796 the fastest the engine takes. The rate is the engine's measured table, not words per minute divided by 190, so 380 is 1.87 times normal and 1600 is 7.17 times normal. Moving the rate slider switches the exact rate off again.
+3. Pitch: 14 is Steve's own pitch, 110 Hz, 33 is Brittany's, 210 Hz, 7 is Gary's, 78 Hz, 19 is David's, 138 Hz, and 45 is Taylor's, 270 Hz. For an exact pitch, open NVDA Settings, then the Klattara category, and set "Base pitch in hertz": the engine takes 40 to 550 Hz. Moving the pitch slider switches the exact pitch off again. The hertz value follows the voice while the exact pitch is off, so turning it on starts at the voice's own pitch.
 4. Inflection: 40, normal pitch movement, is Steve's and Brittany's, 34 is Gary's, 32 is David's and 46 is Taylor's. Set it to 0 for a monotone.
 5. Expand abbreviations: checked by default. When checked, "Dr." is read "doctor" and "Calif." is read "California". When unchecked, abbreviations are read as written: spelled out when they have no vowel, and sounded out when they do.
 6. Phrase prediction: unchecked by default, as most screen reader users prefer. When checked, a long sentence without commas is broken into phrases where a reader would break it, such as before "which" or "toward": the pitch falls a little and starts afresh, with no pause. It can make long sentences in documents easier to follow.
+7. Flutter: off by default. How much the pitch wavers, slowly and unevenly, as a shaky voice does. David has the most of it, at 60, where the other voices have 25.
+8. Head size: the size of the head, as a percentage: a larger head lowers the formants, as a longer vocal tract does. Gary is at 120, David at 94 and Taylor at 89.
+9. Roughness: how uneven the voice is from one pulse to the next. Gary is at 8 and David at 16.
+10. Breathiness: the level of breath noise through the voice, in dB. Brittany is at 36, David at 52 and Taylor at 24.
+11. Open quotient: how long the vocal folds stay open in each cycle, as a percentage: a longer open phase sounds fuller and less buzzy. Steve is at 55, Brittany at 65, Gary at 60, David at 70 and Taylor at 58.
+12. Smoothness: how soft the voice is: more takes the edge off it, but not off consonants. Brittany is at 12, Gary at 8, David at 28 and Taylor at 4.
+13. Female vocal tract: when checked, the voice uses the female model of the vocal tract, with its higher formants, whatever voice is chosen. Brittany and Taylor use it.
+14. Baseline fall, hat rise, stress rise and quickness: how the voice moves its pitch through a phrase, DECtalk's bf, hr, sr and qu. Steve is at 18, 18, 32 and 40; Brittany at 12, 16, 36 and 58; Gary at 10, 22, 26 and 14; David at 8, 14, 20 and 6; Taylor at 5, 20, 42 and 72.
+15. Lax breathiness: breath that comes up and softens the voice only at the ends of sentences and just before voiceless sounds, DECtalk's lx. Brittany is at 65, Gary at 8, David at 70 and Taylor at 30.
+16. Sample rate: the rate the synthesizer runs at, chosen from twenty rates in Hz, from 8000 to 96000. 22050 is the default. Higher rates carry more of the hiss of S and F, lower ones sound duller. At 8000 Hz the engine widens the highest formants so loud vowels stay off the rail, and the fricatives are brought down into the band, so S keeps its hiss. The hiss and breathiness are kept at the same level at every rate, so full breathiness doesn't clip at 8000, and the noise scaling never boosts above 22050, so it doesn't clip at 96000 either. All twenty rates from 8000 to 96000 are covered.
 
 ## KlattPad
 
