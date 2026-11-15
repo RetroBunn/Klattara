@@ -160,7 +160,9 @@ public class SettingsActivity extends Activity {
             }
             public void picked(int index) { settings.setSampleRate(rates[index]); }
         });
-        note("The rate Klattara synthesizes at, from 8000 to 48000 hertz. Lower rates sound duller and older, higher ones brighter.");
+        note("The rate Klattara synthesizes at, from 8000 to " + Settings.highestSampleRate() + " hertz"
+                + (Settings.highestSampleRate() < 96000 ? " (the most Android before 5.0 can play)" : "")
+                + ". Lower rates sound duller and older, higher ones brighter.");
 
         voiceSettings = new LinearLayout(this);
         voiceSettings.setOrientation(LinearLayout.VERTICAL);
@@ -683,11 +685,12 @@ public class SettingsActivity extends Activity {
         }
     }
 
-    private static int nextId = 0x4b000000;
-
+    /** A proper view id for a label to point at (labels link only from Android 4.2, which has these). */
+    @TargetApi(17)
     private static int assignId(View v) {
-        v.setId(++nextId);
-        return nextId;
+        int id = View.generateViewId();
+        v.setId(id);
+        return id;
     }
 
     private LinearLayout.LayoutParams matchWidth() {

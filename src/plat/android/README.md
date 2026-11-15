@@ -8,7 +8,7 @@ speaks: everything is in the app, nothing is downloaded.
 Features, as on the Mac: the five voices, chosen as the voice profile, which Klattara speaks with everywhere
 on every Android version; rate from 30 to 1920 words per minute, following the screen reader's rate or
 exact; exact base pitch in hertz; inflection; flutter (off by default); volume; abbreviations; phrase
-prediction; the sampling rates from 8000 to 48000 hertz, the highest every Android's audio takes; every
+prediction; all twenty sampling rates, 8000 to 96000 hertz (48000 at most before Android 5, the most its audio can play); every
 documented `[:cv]` voice setting, kept per voice; your own pronunciation dictionaries; and a test box that
 speaks directly or through Android, and saves WAV files.
 

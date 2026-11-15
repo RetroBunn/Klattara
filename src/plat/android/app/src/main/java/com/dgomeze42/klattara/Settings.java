@@ -2,6 +2,7 @@ package com.dgomeze42.klattara;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Build;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -82,25 +83,27 @@ final class Settings {
     void setPhrasePrediction(boolean v) { put("phrasePrediction", v); }
 
     /**
-     * The highest rate offered: 48 kHz, which every Android's audio output takes.
-     * Some newer devices take more, but not all, so the engine's higher rates are
-     * left out here.
+     * The highest rate this Android's audio output can play: 96 kHz from Android
+     * 5.0, whose audio tracks take up to that, and 48 kHz before, a limit of the
+     * system itself. Every one of the engine's twenty rates up to it is offered.
      */
-    static final int HIGHEST_SAMPLE_RATE = 48000;
+    static int highestSampleRate() {
+        return Build.VERSION.SDK_INT >= 21 ? 96000 : 48000;
+    }
 
-    /** The rates offered, 8000 to 48000 hertz. */
+    /** The rates offered on this Android: all twenty from 5.0 on, up to 48000 hertz before. */
     static int[] sampleRates() {
-        int n = 0;
-        for (int r : SAMPLE_RATES) if (r <= HIGHEST_SAMPLE_RATE) n++;
+        int highest = highestSampleRate(), n = 0;
+        for (int r : SAMPLE_RATES) if (r <= highest) n++;
         int[] out = new int[n];
         int i = 0;
-        for (int r : SAMPLE_RATES) if (r <= HIGHEST_SAMPLE_RATE) out[i++] = r;
+        for (int r : SAMPLE_RATES) if (r <= highest) out[i++] = r;
         return out;
     }
 
     int sampleRate() {
         int r = prefs.getInt("sampleRate", DEFAULT_SAMPLE_RATE);
-        if (r > HIGHEST_SAMPLE_RATE) return HIGHEST_SAMPLE_RATE;
+        if (r > highestSampleRate()) return highestSampleRate();
         for (int s : SAMPLE_RATES) if (s == r) return r;
         return DEFAULT_SAMPLE_RATE;
     }

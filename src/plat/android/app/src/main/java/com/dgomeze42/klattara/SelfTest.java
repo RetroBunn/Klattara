@@ -100,9 +100,10 @@ final class SelfTest {
                 jobs.add(new Job(v, 1.0f, Settings.DEFAULT_SAMPLE_RATE));
                 jobs.add(new Job(v, 2.0f, Settings.DEFAULT_SAMPLE_RATE));
             }
+            // The lowest rate, 48 kHz, and the rates above it, through the service.
             jobs.add(new Job(0, 1.0f, 8000));
-            jobs.add(new Job(0, 1.0f, Settings.HIGHEST_SAMPLE_RATE));
-            Log.i(TAG, "sampling rates offered: " + Settings.sampleRates().length + ", highest " + Settings.HIGHEST_SAMPLE_RATE);
+            for (int rate : Settings.sampleRates()) if (rate >= 48000) jobs.add(new Job(0, 1.0f, rate));
+            Log.i(TAG, "sampling rates offered: " + Settings.sampleRates().length + ", highest " + Settings.highestSampleRate());
         }
 
         private File file(Job j) {

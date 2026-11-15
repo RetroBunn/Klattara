@@ -23,10 +23,10 @@ android {
         applicationId = "com.dgomeze42.klattara"
         minSdk = 14
         targetSdk = 35
-        versionName = "1.9.5"
+        versionName = "1.9.6"
         // The same for every build, so any one can replace another in either
         // direction (a higher number on one would make the others "downgrades").
-        versionCode = 19500
+        versionCode = 19600
     }
 
     flavorDimensions += "device"
