@@ -1,0 +1,4 @@
+# Built by build.sh.
+build/
+lib/
+KlattaraiOS.xcodeproj/

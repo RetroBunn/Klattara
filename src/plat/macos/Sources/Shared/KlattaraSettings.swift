@@ -146,14 +146,23 @@ public enum KlattaraStorage {
            let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) {
             return url
         }
+        #if os(macOS)
         var home = NSHomeDirectory()
         if let pw = getpwuid(getuid()) { home = String(cString: pw.pointee.pw_dir) }
         return URL(fileURLWithPath: home).appendingPathComponent("Library/Application Support/Klattara", isDirectory: true)
+        #else
+        // Without the group (a build signed without it), each side keeps its own.
+        return URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/Klattara", isDirectory: true)
+        #endif
     }
 
     public static var settingsURL: URL { directory.appendingPathComponent("settings.json") }
 
-    /// Whether this process is signed with a team identifier.
+    /// Whether this process is signed with a team identifier. On iPhone and
+    /// iPad every installed app is, and the group container is simply there or not.
+    #if os(iOS)
+    public static let hasTeamIdentifier = true
+    #else
     public static let hasTeamIdentifier: Bool = {
         var code: SecCode?
         guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return false }
@@ -164,6 +173,7 @@ public enum KlattaraStorage {
               let dict = info as? [String: Any] else { return false }
         return !((dict[kSecCodeInfoTeamIdentifier as String] as? String) ?? "").isEmpty
     }()
+    #endif
 }
 
 /// Loads and saves the settings file. Cheap enough to consult for every

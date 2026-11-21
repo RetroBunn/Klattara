@@ -310,6 +310,7 @@ The tools in src/tools measure how clear the voice is, using a speech recognizer
 - src/plat/windows: klattara.dll and its C header.
 - src/plat/klattpad: KlattPad and its tests.
 - src/plat/web: KlattPad on the web, with the engine as WebAssembly.
+- src/plat/ios: the voices for VoiceOver on iPhone and iPad, from the Mac version's sources.
 - src/plat/nvda: the NVDA add-on, its build script and its tests.
 - src/data: the pronouncing dictionary, the hand-written additions to it, the letter-to-sound model and the homograph table.
 - src/tools: Python tools for measuring clarity and for rebuilding the data.

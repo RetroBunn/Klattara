@@ -1,6 +1,6 @@
-// The Klattara app: carries the speech synthesis extension (which is what puts
-// Klattara's voices in VoiceOver Utility and Spoken Content), and edits the
-// settings the extension speaks with.
+// The Klattara app, for macOS, iPhone and iPad: carries the speech synthesis
+// extension (which is what puts Klattara's voices in VoiceOver and Spoken
+// Content), and edits the settings the extension speaks with.
 
 import AVFoundation
 import SwiftUI
@@ -12,10 +12,19 @@ struct KlattaraApp: App {
 
     var body: some Scene {
         WindowGroup("Klattara") {
+            #if os(macOS)
             ContentView(model: model)
                 .frame(minWidth: 520, minHeight: 560)
+            #else
+            NavigationStack {
+                ContentView(model: model)
+                    .navigationTitle("Klattara")
+            }
+            #endif
         }
+        #if os(macOS)
         .windowResizability(.contentSize)
+        #endif
     }
 }
 
@@ -27,7 +36,7 @@ final class AppModel: ObservableObject {
             if settings != oldValue { persist() }
         }
     }
-    @Published var testText = "Hello. This is Klattara, a Klatt-style formant synthesizer, speaking on the Mac."
+    @Published var testText = "Hello. This is Klattara, a Klatt-style formant synthesizer, speaking on \(platformName)."
     @Published var status = ""
 
     private let engine = AVAudioEngine()
@@ -65,6 +74,10 @@ final class AppModel: ObservableObject {
     /// Speaks the test text straight through the engine, with these settings.
     func speakDirectly() {
         stop()
+        #if os(iOS)
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
         // At the chosen rate itself; the audio engine converts for the device.
         let rate = Double(settings.sampleRate)
         let speaker = KlattaraSpeaker(outputRate: rate)
@@ -92,14 +105,21 @@ final class AppModel: ObservableObject {
 
     @Published var isSaving = false
 
-    /// Asks where to save, then writes the text box's text as a WAV file, with
-    /// the chosen voice, rate, pitch and sample rate.
+    /// Writes the text box's text as a WAV file, with the chosen voice, rate,
+    /// pitch and sample rate: on a Mac where you choose; on iPhone and iPad into
+    /// Klattara's folder in the Files app.
     func saveWAV() {
+        let name = "Klattara \(voice.fullName) \(settings.sampleRate) Hz.wav"
+        #if os(macOS)
         let panel = NSSavePanel()
         panel.title = "Save Speech as WAV"
         panel.allowedContentTypes = [.wav]
-        panel.nameFieldStringValue = "Klattara \(voice.fullName) \(settings.sampleRate) Hz.wav"
+        panel.nameFieldStringValue = name
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        #else
+        guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let url = documents.appendingPathComponent(name)
+        #endif
         let text = testText, voice = voice, settings = settings
         isSaving = true
         status = "Saving \(url.lastPathComponent)…"
@@ -108,8 +128,8 @@ final class AppModel: ObservableObject {
             do {
                 let seconds = try KlattaraSynthesis.writeWAV(
                     items: KlattaraSynthesis.items(forPlainText: text), voice: voice, settings: settings, to: url)
-                result = String(format: "Saved %@: %.1f seconds, %d hertz, 16-bit mono.",
-                                url.lastPathComponent, seconds, settings.sampleRate)
+                result = String(format: "Saved %@: %.1f seconds, %d hertz, 16-bit mono.%@",
+                                url.lastPathComponent, seconds, settings.sampleRate, savedWhere)
             } catch {
                 result = "Could not save \(url.lastPathComponent): \(error.localizedDescription)"
             }
@@ -120,7 +140,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Speaks the test text through macOS, the way VoiceOver does.
+    /// Speaks the test text through the system, the way VoiceOver does.
     func speakThroughSystem() {
         stop()
         guard let systemVoice else {
@@ -130,7 +150,7 @@ final class AppModel: ObservableObject {
         let utterance = AVSpeechUtterance(string: testText)
         utterance.voice = systemVoice
         synthesizer.speak(utterance)
-        status = "Speaking through macOS with \(systemVoice.name)."
+        status = "Speaking through \(platformName) with \(systemVoice.name)."
     }
 
     func stop() {
@@ -164,7 +184,7 @@ struct ContentView: View {
                         Text(voice.fullName).tag(voice.id)
                     }
                 }
-                Text("VoiceOver and other apps choose their own voice: VoiceOver Utility, Speech, then the voice menu or Add Voice. The voice settings further down are this voice's own; rate, pitch, flutter and the rest apply to every Klattara voice.")
+                Text("VoiceOver and other apps choose their own voice: \(voiceSettingsPath). The voice settings further down are this voice's own; rate, pitch, flutter and the rest apply to every Klattara voice.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -242,10 +262,11 @@ struct ContentView: View {
             Section("Test") {
                 TextField("Text to speak", text: $model.testText, axis: .vertical)
                     .lineLimit(3...6)
+                #if os(macOS)
                 HStack {
                     Button("Speak") { model.speakDirectly() }
                         .keyboardShortcut(.defaultAction)
-                    Button("Speak Through macOS") { model.speakThroughSystem() }
+                    Button("Speak Through \(platformName)") { model.speakThroughSystem() }
                     Button("Stop") { model.stop() }
                         .keyboardShortcut(.cancelAction)
                     Button("Save as WAV…") { model.saveWAV() }
@@ -254,6 +275,15 @@ struct ContentView: View {
                     Spacer()
                     Button("Refresh System Voices") { model.refreshSystemVoices() }
                 }
+                #else
+                // One button to a row: a row with several would press them all.
+                Button("Speak") { model.speakDirectly() }
+                Button("Speak Through \(platformName)") { model.speakThroughSystem() }
+                Button("Stop") { model.stop() }
+                Button("Save as WAV") { model.saveWAV() }
+                    .disabled(model.isSaving)
+                Button("Refresh System Voices") { model.refreshSystemVoices() }
+                #endif
                 if !model.status.isEmpty {
                     Text(model.status)
                         .accessibilityAddTraits(.updatesFrequently)
@@ -431,18 +461,32 @@ struct ParameterRow: View {
     }
 }
 
-/// Speaks a short message through VoiceOver; the same on every macOS version.
+/// Speaks a short message through VoiceOver; the same on every system version.
 @MainActor
 func announce(_ message: String) {
+    #if os(macOS)
     NSAccessibility.post(element: NSApp.mainWindow ?? NSApp as Any, notification: .announcementRequested,
                          userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    #else
+    UIAccessibility.post(notification: .announcement, argument: message)
+    #endif
 }
 
+#if os(macOS)
+let savedWhere = ""
+let platformName = "macOS"
+let voiceSettingsPath = "VoiceOver Utility, Speech, then the voice menu or Add Voice"
+#else
+let savedWhere = " It is in the Files app, in Klattara's folder."
+let platformName = UIDevice.current.userInterfaceIdiom == .pad ? "iPadOS" : "iOS"
+let voiceSettingsPath = "Settings, Accessibility, VoiceOver, Speech, Voice"
+#endif
+
 extension View {
-    /// onChange with the new value, on macOS 13 and on 14 and newer alike.
+    /// onChange with the new value, on macOS 13 and iOS 16 and on newer alike.
     @ViewBuilder
     func onChangeOf<V: Equatable>(_ value: V, perform action: @escaping (V) -> Void) -> some View {
-        if #available(macOS 14.0, *) {
+        if #available(macOS 14.0, iOS 17.0, *) {
             onChange(of: value) { _, newValue in action(newValue) }
         } else {
             onChange(of: value, perform: action)
