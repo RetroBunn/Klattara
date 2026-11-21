@@ -179,6 +179,9 @@ def main():
         setattr(wx, name, 1)
     synth = Synth()
     module("synthDriverHandler", getSynth=lambda: synth)
+    # NVDA's configuration, where the panel keeps the settings while another
+    # synthesizer is speaking.
+    conf = module("config", conf={"speech": {}})
     path = (
         Path(__file__).parent
         / "addon/globalPlugins/klattaraSettings/__init__.py"
@@ -358,15 +361,29 @@ def main():
         (synth._pitchInHertz, synth._pitchHertz) == (False, 78),
         "Cancel restores the hertz pitch as a whole number",
     )
-    # Without Klattara as the synthesizer, the panel says so and disables
-    # its controls.
+    # Without Klattara as the synthesizer, the panel still works: its check
+    # boxes stay enabled (disabled ones can't be reached with Tab, so a screen
+    # reader found the page empty), it says Klattara isn't speaking, and what
+    # is set goes into Klattara's saved settings for when it is chosen.
     sys.modules["synthDriverHandler"].getSynth = lambda: None
     panel = plugin.KlattaraSettingsPanel()
     panel.makeSettings(Widget())
     check(
-        not panel.pitch_hz_mode.enabled and not panel.wpm_mode.enabled,
-        "without Klattara the panel's controls are disabled",
+        panel.pitch_hz_mode.enabled and panel.wpm_mode.enabled,
+        "without Klattara the panel's check boxes stay enabled",
     )
+    check("isn't the synthesizer speaking" in panel.panelDescription, "and the panel says Klattara isn't speaking")
+    panel.wpm_mode.SetValue(True)
+    panel.on_wpm_changed(Widget())
+    check(panel.wpm_value.enabled, "checking words per minute enables its value")
+    panel.wpm_value.SetValue(450)
+    panel.on_wpm_changed(Widget())
+    panel.onSave()
+    saved = conf.conf["speech"]["klattara"]
+    check((saved["_rateInWpm"], saved["_rateWpm"]) == (True, 450), "the rate is saved for when Klattara is chosen")
+    panel = plugin.KlattaraSettingsPanel()
+    panel.makeSettings(Widget())
+    check((panel.wpm_mode.GetValue(), panel.wpm_value.GetValue()) == (True, 450), "and the panel shows it next time")
     print("All settings panel tests passed.")
 
 
