@@ -5,9 +5,14 @@
 #   ./uninstall.sh               what ./install.sh put in
 #   sudo ./uninstall.sh --system what sudo ./install.sh --system put in
 set -eu
+# Speech Dispatcher's own settings: /etc on Linux, /usr/local/etc on FreeBSD.
+SYS_SD=/etc/speech-dispatcher
+if [ ! -f "$SYS_SD/speechd.conf" ] && [ -f /usr/local/etc/speech-dispatcher/speechd.conf ]; then
+	SYS_SD=/usr/local/etc/speech-dispatcher
+fi
 if [ "${1:-}" = "--system" ]; then
 	PREFIX=/usr/local
-	SD=/etc/speech-dispatcher
+	SD=$SYS_SD
 else
 	PREFIX=$HOME/.local
 	SD=${XDG_CONFIG_HOME:-$HOME/.config}/speech-dispatcher

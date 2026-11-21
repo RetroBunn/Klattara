@@ -1,7 +1,8 @@
-Klattara for Linux
-==================
+Klattara for Linux and FreeBSD
+==============================
 
-Klattara, the Klatt-style formant synthesizer, for Linux: the klattara command,
+Klattara, the Klatt-style formant synthesizer, for Linux and FreeBSD: the
+klattara command,
 and a Speech Dispatcher module so Orca and every program that speaks through
 Speech Dispatcher can use it. Everything is in this folder; nothing is downloaded.
 
@@ -13,12 +14,25 @@ WHICH PACKAGE
   aarch64   64-bit ARM: Raspberry Pi 4 and 5 with a 64-bit system, ARM laptops
   armv7     32-bit ARM: Raspberry Pi 2, 3 and 4 with a 32-bit system
   riscv64   64-bit RISC-V boards
+  ppc64le   64-bit PowerPC: IBM POWER8 and newer, Raptor Talos and Blackbird
+  s390x     IBM Z and LinuxONE mainframes
+  loongarch64  Loongson 3A5000 and newer
+
+  freebsd-x86_64, freebsd-aarch64 and freebsd-i686: FreeBSD 14 or newer, on
+  64-bit Intel and AMD, 64-bit ARM, and 32-bit Intel and AMD.
 
 Not sure? Run "uname -m" in a terminal: it prints the name to choose
-(arm64 is aarch64, armv7l is armv7, i386 or i686 is i686).
+(arm64 is aarch64, armv7l is armv7, i386 or i686 is i686, loong64 is
+loongarch64; on FreeBSD, amd64 is x86_64 and arm64 is aarch64).
 
-The klattara program runs on any distribution. libklattara.so needs glibc 2.17
-or newer (2.27 on RISC-V), which every current distribution has.
+The klattara program runs on any distribution (on IBM Z it needs glibc 2.17).
+libklattara.so needs glibc 2.17 or newer (2.19 on PowerPC, 2.27 on RISC-V and
+2.36 on LoongArch), which every current distribution has.
+
+On FreeBSD, install Speech Dispatcher with "pkg install speech-dispatcher" to
+use Klattara with Orca. The klattara command plays through PulseAudio or
+PipeWire when they are installed, and otherwise straight through FreeBSD's own
+sound (/dev/dsp).
 
 
 INSTALLING

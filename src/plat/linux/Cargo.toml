@@ -1,6 +1,6 @@
 [package]
 name = "klattara-linux"
-version = "1.9.6"
+version = "1.9.7"
 edition = "2024"
 license = "MIT"
 description = "Klattara for Linux: the klattara command, which speaks, saves WAV files, and serves Speech Dispatcher"

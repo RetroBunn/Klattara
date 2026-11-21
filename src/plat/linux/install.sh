@@ -9,12 +9,17 @@
 # any module, so the modules it was finding (espeak-ng and so on) are named too,
 # and stay. Every line added is marked, so ./uninstall.sh takes out exactly those.
 set -eu
+# Speech Dispatcher's own settings: /etc on Linux, /usr/local/etc on FreeBSD.
+SYS_SD=/etc/speech-dispatcher
+if [ ! -f "$SYS_SD/speechd.conf" ] && [ -f /usr/local/etc/speech-dispatcher/speechd.conf ]; then
+	SYS_SD=/usr/local/etc/speech-dispatcher
+fi
 HERE=$(cd "$(dirname "$0")" && pwd)
 MARK="# Added by Klattara's install.sh"
 
 if [ "${1:-}" = "--system" ]; then
 	PREFIX=/usr/local
-	SD=/etc/speech-dispatcher
+	SD=$SYS_SD
 else
 	PREFIX=$HOME/.local
 	SD=${XDG_CONFIG_HOME:-$HOME/.config}/speech-dispatcher
@@ -38,7 +43,7 @@ if [ "${1:-}" != "--system" ]; then
 fi
 
 # ---- Speech Dispatcher -------------------------------------------------------
-if [ ! -f /etc/speech-dispatcher/speechd.conf ] && [ ! -f "$SD/speechd.conf" ]; then
+if [ ! -f "$SYS_SD/speechd.conf" ] && [ ! -f "$SD/speechd.conf" ]; then
 	echo
 	echo "Speech Dispatcher is not installed, so Klattara was not added to it."
 	echo "Install it (the package speech-dispatcher), then run this again to use Klattara with Orca."
@@ -50,7 +55,7 @@ sed "s|@KLATTARA@|$PREFIX/bin/klattara|g" "$HERE/speech-dispatcher/klattara.conf
 
 # A speechd.conf of your own replaces the system's, so start from a copy of it.
 if [ ! -f "$SD/speechd.conf" ]; then
-	cp /etc/speech-dispatcher/speechd.conf "$SD/speechd.conf"
+	cp "$SYS_SD/speechd.conf" "$SD/speechd.conf"
 fi
 
 if ! grep -q '^AddModule "klattara"' "$SD/speechd.conf"; then
@@ -67,7 +72,7 @@ if ! grep -q '^AddModule "klattara"' "$SD/speechd.conf"; then
 				binary=$(basename "$module")
 				name=${binary#sd_}
 				case $name in generic|dummy|cicero|kali|baratinoo|voxin|ibmtts|ivona) continue ;; esac
-				if [ -f "/etc/speech-dispatcher/modules/$name.conf" ] || [ -f "$SD/modules/$name.conf" ]; then
+				if [ -f "$SYS_SD/modules/$name.conf" ] || [ -f "$SD/modules/$name.conf" ]; then
 					line="AddModule \"$name\" \"$binary\" \"$name.conf\""
 				else
 					line="AddModule \"$name\" \"$binary\""
@@ -83,7 +88,8 @@ fi
 
 # Speech Dispatcher reads its settings when it starts; stop it, and the next
 # program that speaks starts it again with Klattara. Linux shortens process
-# names to 15 characters, so a running one is "speech-dispatch". For you alone,
+# names to 15 characters, so a running one is "speech-dispatch" (FreeBSD keeps
+# 19, so there it is "speech-dispatcher"). For you alone,
 # only yours; for everyone, every one.
 if [ "${1:-}" = "--system" ]; then who=""; else who="-u $(id -u)"; fi
 pkill $who -x speech-dispatch 2>/dev/null || true

@@ -56,7 +56,8 @@ Output
   -w, --wav FILE           save a WAV file (- for standard output) instead of playing
       --raw                write 16-bit little-endian mono PCM to standard output
       --player COMMAND     play through this command, which reads raw PCM on its input;
-                           {rate} becomes the sample rate (default: paplay, pw-cat or aplay)
+                           {rate} becomes the sample rate (default: paplay, pw-cat or aplay;
+                           on FreeBSD, /dev/dsp when none is installed)
 
 Pronunciation
   -d, --dictionary FILE    use a pronunciation dictionary (may be given more than once)
@@ -394,6 +395,10 @@ fn start_player(settings: &Settings, rate: u32) -> Output {
             } else if find_in_path("aplay") {
                 format!("aplay -q -t raw -f S16_LE -r {rate} -c 1 -")
             } else {
+                #[cfg(target_os = "freebsd")]
+                if let Some(device) = oss::open(rate) {
+                    return Output::Stream(None, Box::new(BufWriter::with_capacity(8192, device)));
+                }
                 fail("found no audio player (paplay, pw-cat or aplay); save a WAV with -w, or name one with --player")
             }
         }
@@ -406,6 +411,39 @@ fn start_player(settings: &Settings, rate: u32) -> Output {
             Output::Stream(Some(child), Box::new(BufWriter::with_capacity(8192, stdin)))
         }
         Err(e) => fail(format!("could not start the player \"{program}\": {e}")),
+    }
+}
+
+/// FreeBSD's own sound system, OSS: /dev/dsp, set to 16-bit little-endian mono at
+/// the rate, for when none of the Linux players is installed (as on a plain FreeBSD).
+#[cfg(target_os = "freebsd")]
+mod oss {
+    use std::fs::{File, OpenOptions};
+    use std::os::fd::AsRawFd;
+    use std::os::raw::{c_int, c_ulong};
+
+    unsafe extern "C" {
+        fn ioctl(fd: c_int, request: c_ulong, ...) -> c_int;
+    }
+
+    // _IOWR('P', n, int) on FreeBSD.
+    const SNDCTL_DSP_SPEED: c_ulong = 0xC004_5002;
+    const SNDCTL_DSP_SETFMT: c_ulong = 0xC004_5005;
+    const SNDCTL_DSP_CHANNELS: c_ulong = 0xC004_5006;
+    const AFMT_S16_LE: c_int = 0x10;
+
+    pub fn open(rate: u32) -> Option<File> {
+        let device = OpenOptions::new().write(true).open("/dev/dsp").ok()?;
+        let fd = device.as_raw_fd();
+        let set = |request: c_ulong, value: c_int| -> Option<c_int> {
+            let mut v = value;
+            (unsafe { ioctl(fd, request, &mut v as *mut c_int) } != -1).then_some(v)
+        };
+        (set(SNDCTL_DSP_SETFMT, AFMT_S16_LE)? == AFMT_S16_LE).then_some(())?;
+        (set(SNDCTL_DSP_CHANNELS, 1)? == 1).then_some(())?;
+        // The device may round the rate; FreeBSD's sound system converts any rate.
+        set(SNDCTL_DSP_SPEED, rate as c_int)?;
+        Some(device)
     }
 }
 
