@@ -6,12 +6,25 @@
 //! 32-bit float samples and returns 0 to stop. Speech runs in a Web Worker, so the
 //! page stays responsive; stopping ends that worker.
 //!
-//! The controls mean what KlattPad's mean on Windows (src/plat/klattpad/src/speech.rs):
-//! the Rate slider is the NVDA add-on's, with 15 as normal, and a selection plays
-//! after the commands before it.
+//! The page's settings arrive as Klattara's own commands ("[:speed 190][:cv fl 0
+//! hs 90]"), applied after the voice is chosen, the way the Mac app and the NVDA
+//! add-on send them; a selection then plays after the commands before it.
+
+// voice_settings.rs names the engine crate `engine`, as the Mac and Android libraries do.
+extern crate klattara as engine;
 
 use klattara::{Reading, VOICES, Voice, follow_commands, speak_with};
 use std::cell::RefCell;
+
+#[path = "../../shared/voice_settings.rs"]
+mod voice_settings;
+
+/// The [:cv] settings the page offers, each voice's own value of which
+/// `klattara_voice_settings` gives.
+const CV_CODES: [&str; 25] = [
+    "pi", "in", "fl", "ge", "hs", "rg", "br", "lx", "rc", "oq", "sm", "vvl", "fvl", "avl", "nvl", "fa", "ha", "st", "qk",
+    "f4", "b4", "f5", "b5", "f6", "b6",
+];
 
 #[cfg(target_arch = "wasm32")]
 #[link(wasm_import_module = "env")]
@@ -24,24 +37,8 @@ unsafe fn klattara_audio(_samples: *const f32, _count: usize) -> u32 {
     1
 }
 
-const MIN_RATE: f64 = 29.0;
-const MAX_RATE: f64 = 500.0;
-
 thread_local! {
     static MESSAGE: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
-}
-
-/// The speaking rate at a Rate slider position, as in KlattPad and the NVDA add-on.
-pub fn rate_at(position: u32) -> f64 {
-    (f64::from(position.min(100)) / 100.0 * (MAX_RATE - MIN_RATE) + MIN_RATE).round() / 100.0
-}
-
-/// The voice the controls have chosen.
-pub fn voice_from_controls(voice_index: usize, rate_position: u32, volume_position: u32) -> Voice {
-    let mut voice = Voice::from(VOICES.get(voice_index).unwrap_or(&VOICES[0]));
-    voice.rate = rate_at(rate_position);
-    voice.volume = f64::from(volume_position.min(100)) / 100.0;
-    voice
 }
 
 /// What Play reads: the selection if there is one, after the commands before it,
@@ -101,8 +98,27 @@ pub extern "C" fn klattara_voices() -> usize {
     VOICES.len()
 }
 
+/// Puts a voice's own value of every [:cv] setting in the message, as JSON
+/// ({"pi":110,...}, null where the engine works it out). Returns 0, or -1 for no
+/// such voice.
+#[unsafe(no_mangle)]
+pub extern "C" fn klattara_voice_settings(voice_index: usize) -> i32 {
+    let Some(def) = VOICES.get(voice_index) else { return -1 };
+    let voice = Voice::from(def);
+    let items: Vec<String> = CV_CODES
+        .iter()
+        .map(|code| {
+            let v = voice_settings::setting_of(&voice, code);
+            format!("\"{code}\":{}", if v.is_finite() { format!("{v}") } else { "null".into() })
+        })
+        .collect();
+    set_message(&format!("{{{}}}", items.join(",")));
+    0
+}
+
 /// Speaks UTF-8 text (or the selection from `start` to `end`, in UTF-16 units),
-/// handing the audio to `klattara_audio`. Returns 0 when it was all spoken, 1 when
+/// handing the audio to `klattara_audio`. `commands` are the page's settings as
+/// Klattara commands, applied after the voice is chosen. Returns 0 when it was all spoken, 1 when
 /// the page stopped it, and -1 for a mistake in the text, described in the message.
 ///
 /// # Safety
@@ -114,13 +130,20 @@ pub unsafe extern "C" fn klattara_speak(
     start: usize,
     end: usize,
     voice_index: usize,
-    rate_position: u32,
-    volume_position: u32,
+    commands: *const u8,
+    commands_length: usize,
+    abbreviations: u32,
+    phrase_prediction: u32,
     sample_rate: u32,
 ) -> i32 {
     let bytes = if length == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(text, length) } };
     let text = String::from_utf8_lossy(bytes);
-    let mut voice = voice_from_controls(voice_index, rate_position, volume_position);
+    let command_bytes =
+        if commands_length == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(commands, commands_length) } };
+    let mut voice = Voice::from(VOICES.get(voice_index).unwrap_or(&VOICES[0]));
+    follow_commands(&String::from_utf8_lossy(command_bytes), &mut voice);
+    voice.expand_abbreviations = abbreviations != 0;
+    voice.phrase_prediction = phrase_prediction != 0;
     let part = part_to_speak(&text, start, end, &mut voice);
     set_message("");
     let result = speak_with(&part, Reading::Text, &mut voice, sample_rate.clamp(8000, 96000), &mut |chunk| {
@@ -139,13 +162,6 @@ pub unsafe extern "C" fn klattara_speak(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_rate_slider_matches_klattpad() {
-        assert_eq!(rate_at(15), 1.0);
-        assert_eq!(rate_at(0), 0.29);
-        assert_eq!(rate_at(100), 5.0);
-    }
 
     #[test]
     fn a_selection_follows_the_commands_before_it() {
@@ -170,9 +186,25 @@ mod tests {
     }
 
     #[test]
+    fn gives_each_voices_own_settings() {
+        assert_eq!(klattara_voice_settings(2), 0);
+        let json = MESSAGE.with(|m| String::from_utf8(m.borrow().clone()).unwrap());
+        assert!(json.starts_with("{\"pi\":") && json.contains("\"f4\":"), "{json}");
+        assert_eq!(klattara_voice_settings(99), -1);
+    }
+
+    #[test]
+    fn settings_arrive_as_commands() {
+        let mut voice = Voice::from(&VOICES[0]);
+        follow_commands("[:speed 400][:cv fl 0 hs 90]", &mut voice);
+        assert_eq!((voice.flutter, voice.head_size), (0.0, 90.0));
+    }
+
+    #[test]
     fn speaks() {
         let text = "Hello.";
-        let r = unsafe { klattara_speak(text.as_ptr(), text.len(), 0, 0, 0, 15, 100, 22050) };
+        let cmd = "[:speed 300][:cv fl 0]";
+        let r = unsafe { klattara_speak(text.as_ptr(), text.len(), 0, 0, 0, cmd.as_ptr(), cmd.len(), 1, 0, 22050) };
         // Off the web, klattara_audio takes every piece.
         assert_eq!(r, 0);
     }

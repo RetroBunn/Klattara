@@ -1,8 +1,11 @@
 # KlattPad on the web
 
-KlattPad in a browser: the same Voice, Rate and Volume controls as KlattPad on Windows, Play (F5),
-Pause (F6) and Stop (F7), a sampling rate choice from 8000 to 96000 hertz, Export WAV, and opening and
-saving text. Commands, phoneme input and singing work as they do in KlattPad. It runs entirely in the
+KlattPad in a browser, with every setting the Mac app has: the voice, rate in words per minute (30 to
+1920), base pitch in hertz, inflection, flutter (off unless turned up), volume, abbreviations, phrase
+prediction, all 20 sampling rates, and each voice's own 22 [:cv] settings (gender, head size, roughness,
+breathiness, lax breathiness, richness, open quotient, smoothness, the four source levels, baseline fall,
+hat rise, stress rise, quickness, F4 to F6 and their bandwidths). Play (F5), Pause (F6) and Stop (F7),
+Export WAV, and opening and saving text. Commands, phoneme input and singing work as they do in KlattPad. It runs entirely in the
 browser: the engine is compiled to WebAssembly and speaks in a Web Worker, so nothing is sent anywhere and
 the page stays responsive. Your text and settings are remembered in the browser.
 

@@ -44,7 +44,14 @@ self.onmessage = async (event) => {
     });
     engine = instance.exports;
     const count = engine.klattara_voices();
-    postMessage({ type: "ready", voices: readMessage().split("\n").slice(0, count) });
+    const voices = readMessage().split("\n").slice(0, count);
+    // Each voice's own value of every [:cv] setting, for the voice settings.
+    const own = [];
+    for (let i = 0; i < count; i++) {
+      engine.klattara_voice_settings(i);
+      own.push(JSON.parse(readMessage()));
+    }
+    postMessage({ type: "ready", voices, own });
     return;
   }
   if (message.type === "speak") {
@@ -54,10 +61,15 @@ self.onmessage = async (event) => {
     const bytes = new TextEncoder().encode(message.text);
     const pointer = engine.klattara_alloc(bytes.length);
     new Uint8Array(engine.memory.buffer, pointer, bytes.length).set(bytes);
+    const commands = new TextEncoder().encode(message.commands);
+    const cPointer = engine.klattara_alloc(commands.length);
+    new Uint8Array(engine.memory.buffer, cPointer, commands.length).set(commands);
     const result = engine.klattara_speak(
-      pointer, bytes.length, message.start, message.end,
-      message.voice, message.rate, message.volume, message.sampleRate);
+      pointer, bytes.length, message.start, message.end, message.voice,
+      cPointer, commands.length, message.abbreviations ? 1 : 0, message.phrasePrediction ? 1 : 0,
+      message.sampleRate);
     engine.klattara_free(pointer, bytes.length);
+    engine.klattara_free(cPointer, commands.length);
     flush();
     const error = result < 0 ? readMessage() : "";
     if (mode === "wav") {
