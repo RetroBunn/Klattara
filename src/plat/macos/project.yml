@@ -2,13 +2,13 @@ name: Klattara
 options:
   bundleIdPrefix: com.dgomeze42
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "13.0"
   minimumXcodeGenVersion: "2.35"
 
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.9.4"
+    MARKETING_VERSION: "1.9.7"
     CURRENT_PROJECT_VERSION: "1"
     # The voice extension and the app share their settings through this App
     # Group, which must start with the signing team's identifier.

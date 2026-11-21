@@ -14,7 +14,7 @@ ACTION=${1:-}
 
 # The engine and its C interface, as one universal static library.
 for target in aarch64-apple-darwin x86_64-apple-darwin; do
-	MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --release -p klattara-macos --target "$target" \
+	MACOSX_DEPLOYMENT_TARGET=13.0 cargo build --release -p klattara-macos --target "$target" \
 		--manifest-path "$ROOT/Cargo.toml"
 done
 mkdir -p lib

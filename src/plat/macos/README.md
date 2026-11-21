@@ -4,6 +4,9 @@ Klattara's five voices as macOS system voices, for VoiceOver (VoiceOver Utility 
 Spoken Content and every app that speaks: Klattara Standard Steve, Breezy Brittany, Giant Gary, Delicate David
 and Tiny Taylor.
 
+Runs on macOS 13 Ventura and newer, on Apple silicon and Intel Macs alike: the app and its voice extension
+are universal (arm64 and x86_64), so one build serves both.
+
 - `Klattara.app` edits the settings and carries the voice extension. Settings: exact rate in words per minute
   (30–1920), whether VoiceOver's rate scales it, exact base pitch in hertz (40–550), inflection, volume,
   flutter (off by default), abbreviations, phrase prediction, every other documented `[:cv]` voice setting per

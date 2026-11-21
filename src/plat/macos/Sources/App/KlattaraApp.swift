@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 
 @main
 struct KlattaraApp: App {
-    @State private var model = AppModel()
+    @StateObject private var model = AppModel()
 
     var body: some Scene {
         WindowGroup("Klattara") {
@@ -20,16 +20,15 @@ struct KlattaraApp: App {
 }
 
 @MainActor
-@Observable
-final class AppModel {
+final class AppModel: ObservableObject {
 
-    var settings: KlattaraSettings {
+    @Published var settings: KlattaraSettings {
         didSet {
             if settings != oldValue { persist() }
         }
     }
-    var testText = "Hello. This is Klattara, a Klatt-style formant synthesizer, speaking on the Mac."
-    var status = ""
+    @Published var testText = "Hello. This is Klattara, a Klatt-style formant synthesizer, speaking on the Mac."
+    @Published var status = ""
 
     private let engine = AVAudioEngine()
     private var speaker: KlattaraSpeaker?
@@ -91,7 +90,7 @@ final class AppModel {
         status = "Speaking directly with \(voice.fullName) at \(settings.sampleRate) hertz."
     }
 
-    var isSaving = false
+    @Published var isSaving = false
 
     /// Asks where to save, then writes the text box's text as a WAV file, with
     /// the chosen voice, rate, pitch and sample rate.
@@ -155,7 +154,7 @@ final class AppModel {
 }
 
 struct ContentView: View {
-    @Bindable var model: AppModel
+    @ObservedObject var model: AppModel
 
     var body: some View {
         Form {
@@ -226,7 +225,7 @@ struct ContentView: View {
                     if group == KlattaraParameter.Group.allCases.last {
                         Button("Reset \(model.voice.fullName) to Its Own Settings") {
                             model.settings.resetParameters(for: model.voice)
-                            AccessibilityNotification.Announcement("\(model.voice.fullName) is back to its own settings").post()
+                            announce("\(model.voice.fullName) is back to its own settings")
                         }
                         .disabled(model.settings.parameters(for: model.voice).isEmpty)
                     }
@@ -262,9 +261,9 @@ struct ContentView: View {
             }
         }
         .formStyle(.grouped)
-        .onChange(of: model.status) { _, status in
+        .onChangeOf(model.status) { status in
             guard !status.isEmpty else { return }
-            AccessibilityNotification.Announcement(status).post()
+            announce(status)
         }
     }
 }
@@ -291,7 +290,7 @@ struct NumberField: View {
                     .frame(width: 80)
                     .focused($focused)
                     .onSubmit(apply)
-                    .onChange(of: focused) { _, isFocused in if !isFocused { apply() } }
+                    .onChangeOf(focused) { isFocused in if !isFocused { apply() } }
                     .accessibilityLabel(title)
                     .accessibilityHint("\(range.lowerBound) to \(range.upperBound)")
                 Stepper(title, value: $value, in: range, step: step)
@@ -303,7 +302,7 @@ struct NumberField: View {
             Text("\(title) (\(range.lowerBound)–\(range.upperBound))")
         }
         .onAppear { text = "\(value)" }
-        .onChange(of: value) { _, newValue in if !focused { text = "\(newValue)" } }
+        .onChangeOf(value) { newValue in if !focused { text = "\(newValue)" } }
     }
 
     private func apply() {
@@ -315,7 +314,7 @@ struct NumberField: View {
         value = clamped
         text = "\(clamped)"
         if clamped != typed {
-            AccessibilityNotification.Announcement("\(clamped) \(unit), the \(typed < clamped ? "lowest" : "highest") allowed").post()
+            announce("\(clamped) \(unit), the \(typed < clamped ? "lowest" : "highest") allowed")
         }
     }
 }
@@ -373,7 +372,7 @@ struct ParameterRow: View {
                             .frame(width: 80)
                             .focused($focused)
                             .onSubmit(apply)
-                            .onChange(of: focused) { _, isFocused in if !isFocused { apply() } }
+                            .onChangeOf(focused) { isFocused in if !isFocused { apply() } }
                             .accessibilityLabel(parameter.name)
                             .accessibilityValue(describe(current))
                             .accessibilityHint("\(Int(parameter.range.lowerBound)) to \(Int(parameter.range.upperBound)). \(parameter.help)")
@@ -386,7 +385,7 @@ struct ParameterRow: View {
                     }
                     Button("Reset") {
                         set(nil)
-                        AccessibilityNotification.Announcement("\(parameter.name), \(voice.fullName)'s own, \(describe(own))").post()
+                        announce("\(parameter.name), \(voice.fullName)'s own, \(describe(own))")
                     }
                     .disabled(custom == nil)
                     .accessibilityLabel("Reset \(parameter.name)")
@@ -398,8 +397,8 @@ struct ParameterRow: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .onAppear(perform: refresh)
-        .onChange(of: current) { _, _ in if !focused { refresh() } }
-        .onChange(of: voice) { _, _ in refresh() }
+        .onChangeOf(current) { _ in if !focused { refresh() } }
+        .onChangeOf(voice) { _ in refresh() }
     }
 
     private func refresh() {
@@ -427,7 +426,26 @@ struct ParameterRow: View {
         if clamped != current { set(clamped) }
         refresh()
         if clamped != value {
-            AccessibilityNotification.Announcement("\(parameter.name), \(describe(clamped)), the \(value < clamped ? "lowest" : "highest") allowed").post()
+            announce("\(parameter.name), \(describe(clamped)), the \(value < clamped ? "lowest" : "highest") allowed")
+        }
+    }
+}
+
+/// Speaks a short message through VoiceOver; the same on every macOS version.
+@MainActor
+func announce(_ message: String) {
+    NSAccessibility.post(element: NSApp.mainWindow ?? NSApp as Any, notification: .announcementRequested,
+                         userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+}
+
+extension View {
+    /// onChange with the new value, on macOS 13 and on 14 and newer alike.
+    @ViewBuilder
+    func onChangeOf<V: Equatable>(_ value: V, perform action: @escaping (V) -> Void) -> some View {
+        if #available(macOS 14.0, *) {
+            onChange(of: value) { _, newValue in action(newValue) }
+        } else {
+            onChange(of: value, perform: action)
         }
     }
 }
