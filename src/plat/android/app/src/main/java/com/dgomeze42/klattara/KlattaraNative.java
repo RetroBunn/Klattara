@@ -7,7 +7,15 @@ package com.dgomeze42.klattara;
  */
 final class KlattaraNative {
     static {
-        System.loadLibrary("klattara");
+        // libklattara.so, built for Android 4.0 and newer. On Android 2.2 to 3.2, and
+        // on ARMv5/ARMv6 phones, it is libttsklattara.so instead: the engine plugin
+        // those versions load (jni/legacy_plugin.c), which carries the same JNI
+        // functions, built for ARMv5 and Android 2.2.
+        try {
+            System.loadLibrary("klattara");
+        } catch (UnsatisfiedLinkError e) {
+            System.loadLibrary("ttsklattara");
+        }
     }
 
     private KlattaraNative() {}

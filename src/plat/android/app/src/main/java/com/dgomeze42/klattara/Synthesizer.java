@@ -72,7 +72,7 @@ final class Synthesizer {
         Map<String, Double> custom = settings.parameters(voice);
         String commands = "[:phone klattara disable][:cv fl " + settings.flutter() + "]"
                 + Parameters.command(custom) + "[:speed " + wpm + "]";
-        KlattaraNative.command(engine, commands.getBytes(Parameters.UTF8));
+        KlattaraNative.command(engine, Parameters.utf8(commands));
 
         double pitch = settings.exactPitch() ? settings.pitchHz() : voice.pitch;
         if (settings.followSystemPitch()) pitch *= pitchScale;
@@ -84,7 +84,7 @@ final class Synthesizer {
 
         // Brackets in the text become parentheses, so nothing on screen can work
         // as a command, and dictionary words become their sounds.
-        byte[] prepared = KlattaraNative.dictionaryApply(dictionary, text.toString().getBytes(Parameters.UTF8));
+        byte[] prepared = KlattaraNative.dictionaryApply(dictionary, Parameters.utf8(text.toString()));
         if (prepared == null) return -1;
         return KlattaraNative.speak(engine, prepared, false, chunkBytes, sink);
     }

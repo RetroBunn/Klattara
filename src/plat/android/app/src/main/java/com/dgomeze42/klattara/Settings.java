@@ -31,9 +31,58 @@ final class Settings {
     };
 
     private final SharedPreferences prefs;
+    private final Context context;
 
     Settings(Context context) {
-        prefs = context.getApplicationContext().getSharedPreferences("klattara", Context.MODE_PRIVATE);
+        this.context = context.getApplicationContext();
+        prefs = this.context.getSharedPreferences("klattara", Context.MODE_PRIVATE);
+    }
+
+    /**
+     * Saves a change. On Android 2.2 to 3.2 the voice is a plugin in Android's own
+     * speech service, which cannot read these settings, so they are also written to
+     * files/klattara.conf for it (rust/src/legacy.rs reads it).
+     */
+    @SuppressWarnings("deprecation")
+    private void save(SharedPreferences.Editor editor) {
+        if (Build.VERSION.SDK_INT >= 9) editor.apply();
+        else editor.commit();
+        if (Build.VERSION.SDK_INT < 14) exportForOldAndroid();
+    }
+
+    /** The settings file Android 2.2 to 3.2's engine plugin reads, readable by its process. */
+    @SuppressWarnings("deprecation")
+    void exportForOldAndroid() {
+        StringBuilder b = new StringBuilder("# Written by the Klattara app for the engine plugin; changes here are replaced.\n");
+        b.append("voice = ").append(Voices.get(voice()).key()).append('\n');
+        b.append("rate = ").append(rateWpm()).append('\n');
+        b.append("follow-rate = ").append(followSystemRate() ? "yes" : "no").append('\n');
+        b.append("pitch = ").append(exactPitch() ? String.valueOf(pitchHz()) : "voice").append('\n');
+        b.append("follow-pitch = ").append(followSystemPitch() ? "yes" : "no").append('\n');
+        b.append("inflection = ").append(inflection()).append('\n');
+        b.append("volume = ").append(volume()).append('\n');
+        b.append("flutter = ").append(flutter()).append('\n');
+        b.append("abbreviations = ").append(abbreviations() ? "yes" : "no").append('\n');
+        b.append("phrase-prediction = ").append(phrasePrediction() ? "yes" : "no").append('\n');
+        b.append("sample-rate = ").append(sampleRate()).append('\n');
+        for (Voices.Voice v : Voices.all()) {
+            String cv = Parameters.command(parameters(v));
+            if (cv.length() > 0) {
+                b.append("cv.").append(v.key()).append(" = ").append(cv.substring(5, cv.length() - 1)).append('\n');
+            }
+        }
+        for (DictionaryEntry d : dictionaries()) {
+            if (d.enabled) b.append("dictionary = ").append(Dictionaries.file(context, d.file).getPath()).append('\n');
+        }
+        try {
+            java.io.FileOutputStream out = context.openFileOutput("klattara.conf", Context.MODE_WORLD_READABLE);
+            try {
+                out.write(Parameters.utf8(b.toString()));
+            } finally {
+                out.close();
+            }
+        } catch (java.io.IOException ignored) {
+        }
     }
 
     private static int clamp(int v, int lo, int hi) {
@@ -45,11 +94,11 @@ final class Settings {
     }
 
     private void put(String key, int value) {
-        prefs.edit().putInt(key, value).apply();
+        save(prefs.edit().putInt(key, value));
     }
 
     private void put(String key, boolean value) {
-        prefs.edit().putBoolean(key, value).apply();
+        save(prefs.edit().putBoolean(key, value));
     }
 
     /** The voice profile: the voice Klattara speaks with everywhere, on every Android version. */
@@ -143,7 +192,7 @@ final class Settings {
     }
 
     void resetParameters(Voices.Voice voice) {
-        prefs.edit().remove("params." + voice.key()).apply();
+        save(prefs.edit().remove("params." + voice.key()));
     }
 
     private void saveParameters(Voices.Voice voice, Map<String, Double> own) {
@@ -156,7 +205,7 @@ final class Settings {
             for (Map.Entry<String, Double> e : own.entrySet()) o.put(e.getKey(), e.getValue().doubleValue());
         } catch (JSONException ignored) {
         }
-        prefs.edit().putString("params." + voice.key(), o.toString()).apply();
+        save(prefs.edit().putString("params." + voice.key(), o.toString()));
     }
 
     // ---- Pronunciation dictionaries ----------------------------------------------
@@ -191,8 +240,8 @@ final class Settings {
             for (DictionaryEntry d : list) a.put(new JSONObject().put("file", d.file).put("enabled", d.enabled));
         } catch (JSONException ignored) {
         }
-        prefs.edit().putString("dictionaries", a.toString())
-                .putInt("dictionaryVersion", dictionaryVersion() + 1).apply();
+        save(prefs.edit().putString("dictionaries", a.toString())
+                .putInt("dictionaryVersion", dictionaryVersion() + 1));
     }
 
     /** Moves on whenever the dictionaries change, so the engine reloads them. */

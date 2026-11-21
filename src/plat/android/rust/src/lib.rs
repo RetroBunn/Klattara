@@ -19,6 +19,9 @@ mod voice_settings;
 #[path = "../../../shared/dictionary.rs"]
 pub mod dictionary;
 
+/// Android 2.2 to 3.2's engine plugin: its settings (jni/legacy_plugin.c).
+pub mod legacy;
+
 use dictionary::Dictionary;
 use engine::{VOICES, Voice};
 use std::ffi::{CStr, c_char, c_int};

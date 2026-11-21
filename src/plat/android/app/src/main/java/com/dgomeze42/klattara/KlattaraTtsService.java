@@ -23,6 +23,7 @@ import java.util.Locale;
  * starts at once. onStop comes on another thread and takes effect at the next
  * chunk. Nothing runs between requests.
  */
+@TargetApi(14)  // Android only starts an engine service from 4.0; before, the plugin speaks.
 public class KlattaraTtsService extends TextToSpeechService {
     private static final String LANGUAGE = "eng";
     private static final String COUNTRY = "USA";
@@ -112,9 +113,11 @@ public class KlattaraTtsService extends TextToSpeechService {
     @Override
     protected void onSynthesizeText(SynthesisRequest request, final SynthesisCallback callback) {
         stopRequested = false;
-        CharSequence text = Build.VERSION.SDK_INT >= 18 ? request.getCharSequenceText() : request.getText();
+        // getCharSequenceText is Android 5.0; before, getText (a String).
+        @SuppressWarnings("deprecation")
+        CharSequence text = Build.VERSION.SDK_INT >= 21 ? request.getCharSequenceText() : request.getText();
         if (text == null) text = "";
-        if (!isEnglish(request.getLanguage()) && request.getLanguage() != null && !request.getLanguage().isEmpty()) {
+        if (!isEnglish(request.getLanguage()) && request.getLanguage() != null && request.getLanguage().length() > 0) {
             callback.error();
             return;
         }

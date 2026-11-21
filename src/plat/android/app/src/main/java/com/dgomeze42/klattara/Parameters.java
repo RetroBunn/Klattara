@@ -35,7 +35,7 @@ final class Parameters {
 
         /** The voice's own value, or NaN where the engine works it out. */
         double ownValue(Voices.Voice voice) {
-            return KlattaraNative.voiceSetting(voice.index, code.getBytes(UTF8));
+            return KlattaraNative.voiceSetting(voice.index, utf8(code));
         }
 
         double clamp(double value) {
@@ -44,6 +44,15 @@ final class Parameters {
     }
 
     static final Charset UTF8 = Charset.forName("UTF-8");
+
+    /** UTF-8 bytes. String.getBytes(Charset) is Android 2.3; this is in every version. */
+    static byte[] utf8(String text) {
+        try {
+            return text.getBytes("UTF-8");
+        } catch (java.io.UnsupportedEncodingException e) {
+            throw new AssertionError(e);
+        }
+    }
 
     static final String QUALITY = "Voice quality";
     static final String SOURCES = "Source levels";

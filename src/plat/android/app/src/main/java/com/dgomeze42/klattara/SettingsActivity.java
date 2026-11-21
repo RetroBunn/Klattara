@@ -66,6 +66,8 @@ public class SettingsActivity extends Activity {
         super.onCreate(state);
         settings = new Settings(this);
         synthesizer = new Synthesizer(this);
+        // Android 2.2 to 3.2: the engine plugin's settings file, there from the start.
+        if (Build.VERSION.SDK_INT < 14) settings.exportForOldAndroid();
 
         ScrollView scroll = new ScrollView(this);
         root = new LinearLayout(this);
@@ -257,7 +259,7 @@ public class SettingsActivity extends Activity {
             Runnable apply = new Runnable() {
                 public void run() {
                     String typed = field.getText().toString().trim();
-                    if (typed.isEmpty()) {
+                    if (typed.length() == 0) {
                         if (changed != null) { settings.setParameter(voice, p.code, null); rebuildVoiceSettingsLater(); }
                         return;
                     }
@@ -298,7 +300,7 @@ public class SettingsActivity extends Activity {
 
     private static String describe(Parameters.Parameter p, double value) {
         if (p.code.equals("ge")) return value >= 0.5 ? "male" : "female";
-        return Parameters.shown(value) + (p.unit.isEmpty() ? "" : " " + p.unit);
+        return Parameters.shown(value) + (p.unit.length() == 0 ? "" : " " + p.unit);
     }
 
     private void flutterRow() {
@@ -409,15 +411,28 @@ public class SettingsActivity extends Activity {
         stopAll();
         final String text = testText.getText().toString();
         if (systemTts == null) {
-            systemTts = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
+            TextToSpeech.OnInitListener ready = new TextToSpeech.OnInitListener() {
                 public void onInit(int s) {
                     if (s == TextToSpeech.SUCCESS) speakSystem(text);
                     else setStatus("Android could not start Klattara's speech service.");
                 }
-            }, getPackageName());
+            };
+            if (Build.VERSION.SDK_INT >= 14) {
+                systemTts = new TextToSpeech(this, ready, getPackageName());
+            } else {
+                // Android 2.2 to 3.2: the default engine, then Klattara's plugin by name.
+                systemTts = oldTextToSpeech(ready);
+            }
         } else {
             speakSystem(text);
         }
+    }
+
+    @SuppressWarnings("deprecation")
+    private TextToSpeech oldTextToSpeech(TextToSpeech.OnInitListener ready) {
+        TextToSpeech tts = new TextToSpeech(this, ready);
+        tts.setEngineByPackageName(getPackageName());
+        return tts;
     }
 
     @SuppressWarnings("deprecation")

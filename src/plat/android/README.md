@@ -1,9 +1,9 @@
 # Klattara for Android
 
 Klattara as an Android text-to-speech engine, for TalkBack, other screen readers, braille notetakers and
-every app that speaks, from Android 4.0 (API 14) on phones, tablets, notetakers and Wear OS watches. Install
-the APK, choose Klattara as the preferred engine (Settings, Accessibility, Text-to-speech output), and it
-speaks: everything is in the app, nothing is downloaded.
+every app that speaks, from Android 2.2 (API 8) on phones, tablets, notetakers and Wear OS watches. Install
+the APK, choose Klattara as the preferred engine (Settings, Accessibility, Text-to-speech output; on 2.2 to
+3.2, Settings, Voice input and output, Text-to-speech settings, where Klattara is ticked first), and it speaks: everything is in the app, nothing is downloaded.
 
 Features, as on the Mac: the five voices, chosen as the voice profile, which Klattara speaks with everywhere
 on every Android version; rate from 30 to 1920 words per minute, following the screen reader's rate or
@@ -16,7 +16,8 @@ speaks directly or through Android, and saves WAV files.
 
 | Flavor | Android | Processors | For |
 |---|---|---|---|
-| `anyDevice` | 4.0+ | all four | any device: install this if unsure |
+| `anyDevice` | 2.2+ | all four (and ARMv5 from 2.2) | any device: install this if unsure |
+| `android2` | 2.2+ | ARM (ARMv5 and newer) | Android 2.2 to 3.2 phones (smallest) |
 | `legacy` | 4.0+ | 32-bit ARM, x86 | Android 4.x phones and notetakers (smaller) |
 | `modernArm64` | 5.0+ | 64-bit ARM | most phones and notetakers today |
 | `modernArm32` | 5.0+ | 32-bit ARM | older or lower-cost devices |
@@ -53,6 +54,28 @@ the debug key so they install straight away; use your own key to publish.
   and `SettingsActivity` is the settings screen, built from standard controls for TalkBack and notetakers.
   Choices such as the voice profile and the sampling rate are buttons that open a dialog listing every
   option, rather than drop-down lists, which some notetakers' screen readers cannot reach.
+
+### Android 2.2 to 3.2
+
+Before 4.0 Android has no engine service for apps: its speech service loads a native plugin instead, the
+`libtts<name>.so` of any app with an activity for `android.intent.action.START_TTS_ENGINE` (the
+`.Klattara` alias in the manifest), and calls it through the C++ `TtsEngine` class of
+`frameworks/base/include/tts/TtsEngine.h` (the same from 2.2 to 3.2). `jni/legacy_plugin.c` is that class,
+written out as its vtable in C, over `rust/src/legacy.rs`; the same library also carries the JNI bridge, so
+the app loads it as `libttsklattara.so` there. The plugin runs in Android's speech service, not in the app,
+so the app writes its settings to `files/klattara.conf` (and dictionaries as `files/dictionary-*`), readable
+by the service, and the plugin reads them again before each utterance when they have changed.
+
+It is built with NDK r10e for `armeabi` (ARMv5TE) and `armeabi-v7a`, against android-8:
+
+```
+./build-legacy-docker.sh ~/android-sdk/legacy-ndk   # on a Mac, in an amd64 Linux container
+./build-legacy.sh /path/to/android-ndk-r10e         # on Linux
+```
+
+into `app/src/legacyPlugin/jniLibs/`. The build links with no undefined symbols, refuses text relocations,
+and checks every instruction against ARMv5 (`tools/check_armv5.awk`). `jni/test/` checks the vtable against
+the real `TtsEngine.h` by calling the engine through it as Android would (`legacy_plugin_abi_test.cpp`).
 
 ### Running on Android 4.0
 

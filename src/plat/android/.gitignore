@@ -4,3 +4,5 @@ local.properties
 .kotlin/
 # Built by build-native.sh.
 app/src/main/jniLibs/
+# Built by build-legacy.sh.
+app/src/legacyPlugin/jniLibs/

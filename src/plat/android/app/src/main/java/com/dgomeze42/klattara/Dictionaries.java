@@ -47,6 +47,35 @@ final class Dictionaries {
         return f;
     }
 
+    /** Where Android 2.2 to 3.2's engine plugin, in another process, can read them. */
+    private static final String OLD_ANDROID_PREFIX = "dictionary-";
+
+    private static boolean oldAndroid() {
+        return android.os.Build.VERSION.SDK_INT < 14;
+    }
+
+    /**
+     * Where a dictionary is kept. On Android 2.2 to 3.2 that is the files folder
+     * itself, written readable by Android's speech service (which runs the plugin
+     * and cannot change a file's permissions after), since a folder of its own
+     * would not be readable to it.
+     */
+    static File file(Context context, String name) {
+        return oldAndroid() ? new File(context.getFilesDir(), OLD_ANDROID_PREFIX + name) : new File(folder(context), name);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void write(Context context, String name, byte[] text) throws IOException {
+        FileOutputStream out = oldAndroid()
+                ? context.openFileOutput(OLD_ANDROID_PREFIX + name, Context.MODE_WORLD_READABLE)
+                : new FileOutputStream(file(context, name));
+        try {
+            out.write(text);
+        } finally {
+            out.close();
+        }
+    }
+
     static byte[] read(File file) throws IOException {
         InputStream in = new FileInputStream(file);
         try {
@@ -80,7 +109,7 @@ final class Dictionaries {
         for (Settings.DictionaryEntry e : settings.dictionaries()) {
             int[] counts = null;
             try {
-                counts = check(read(new File(folder(context), e.file)));
+                counts = check(read(file(context, e.file)));
             } catch (IOException ignored) {
             }
             out.add(new Info(e.file, e.enabled, counts));
@@ -104,13 +133,8 @@ final class Dictionaries {
             throw new IOException(name + " has no entries Klattara can use"
                     + (counts != null && counts[1] > 0 ? " (" + counts[1] + " lines with mistakes, the first at line " + counts[2] + ")" : "") + ".");
         }
-        String file = unique(folder(context), name);
-        FileOutputStream out = new FileOutputStream(new File(folder(context), file));
-        try {
-            out.write(text);
-        } finally {
-            out.close();
-        }
+        String file = unique(context, name);
+        write(context, file, text);
         List<Settings.DictionaryEntry> list = settings.dictionaries();
         list.add(new Settings.DictionaryEntry(file, true));
         settings.setDictionaries(list);
@@ -130,7 +154,7 @@ final class Dictionaries {
         List<Settings.DictionaryEntry> kept = new ArrayList<Settings.DictionaryEntry>();
         for (Settings.DictionaryEntry e : list) if (!e.file.equals(file)) kept.add(e);
         settings.setDictionaries(kept);
-        new File(folder(context), file).delete();
+        file(context, file).delete();
     }
 
     /** A native dictionary holding every enabled file, in order; 0 if there are none. */
@@ -139,7 +163,7 @@ final class Dictionaries {
         for (Settings.DictionaryEntry e : settings.dictionaries()) {
             if (!e.enabled) continue;
             try {
-                byte[] text = read(new File(folder(context), e.file));
+                byte[] text = read(file(context, e.file));
                 if (d == 0) d = KlattaraNative.dictionaryNew();
                 KlattaraNative.dictionaryLoad(d, text);
             } catch (IOException ignored) {
@@ -163,17 +187,17 @@ final class Dictionaries {
             if (c != null) c.close();
         }
         if (name == null) name = uri.getLastPathSegment();
-        if (name == null || name.trim().isEmpty()) name = "dictionary.dict";
+        if (name == null || name.trim().length() == 0) name = "dictionary.dict";
         return name.replaceAll("[/\\\\:*?\"<>|]", "_");
     }
 
-    private static String unique(File folder, String name) {
-        if (!new File(folder, name).exists()) return name;
+    private static String unique(Context context, String name) {
+        if (!file(context, name).exists()) return name;
         int dot = name.lastIndexOf('.');
         String base = dot > 0 ? name.substring(0, dot) : name, ext = dot > 0 ? name.substring(dot) : "";
         for (int i = 2; ; i++) {
             String candidate = base + " " + i + ext;
-            if (!new File(folder, candidate).exists()) return candidate;
+            if (!file(context, candidate).exists()) return candidate;
         }
     }
 }

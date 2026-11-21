@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The device's own look: plain on Android 2.x, Holo on 3.x (values-v11),
+         the device's default from 4.0 (values-v14). -->
+    <style name="KlattaraTheme" parent="@android:style/Theme" />
+</resources>
