@@ -7,6 +7,34 @@ name = "klattara"
 version = "1.0.0"
 
 [[package]]
+name = "klattara-android"
+version = "1.0.0"
+dependencies = [
+ "klattara",
+]
+
+[[package]]
+name = "klattara-linux"
+version = "1.9.7"
+dependencies = [
+ "klattara",
+]
+
+[[package]]
+name = "klattara-macos"
+version = "1.0.0"
+dependencies = [
+ "klattara",
+]
+
+[[package]]
+name = "klattara-web"
+version = "1.9.7"
+dependencies = [
+ "klattara",
+]
+
+[[package]]
 name = "klattara-windows"
 version = "1.0.0"
 dependencies = [

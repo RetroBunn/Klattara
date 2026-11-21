@@ -8,7 +8,7 @@
 //! freely. The two branches are summed at the output.
 
 use crate::frame::{Frame, NUM_FORMANTS};
-use crate::resonator::{AntiResonator, Resonator};
+use crate::resonator::{response_sq_for, AntiResonator, Resonator};
 use crate::singing::VIBRATO_SPEED;
 use crate::source::{GlottalSource, Noise, TiltFilter};
 
@@ -102,6 +102,9 @@ pub struct Synth {
     nasal_pole: Resonator,
     cascade: [Resonator; NUM_FORMANTS],
     parallel: [Resonator; NUM_FORMANTS],
+    /// How much to scale the aspiration noise by, so the noise power through
+    /// the cascade stays what it is at 22050 Hz (see `update_filters`).
+    cascade_noise_scale: f64,
 }
 
 impl Synth {
@@ -121,6 +124,7 @@ impl Synth {
             nasal_pole: Resonator::default(),
             cascade: [Resonator::default(); NUM_FORMANTS],
             parallel: [Resonator::default(); NUM_FORMANTS],
+            cascade_noise_scale: 1.0,
         };
         synth.set_settings(VoiceSettings::default());
         synth.update_filters(&Frame::default());
@@ -186,10 +190,51 @@ impl Synth {
         self.tilt.set(p.tl, sr);
         self.nasal_zero.set(p.fnz, p.bnz, sr);
         self.nasal_pole.set(p.fnp, p.bnp, sr);
+        // Frication lives in the top formants, which fall above the usable range
+        // at low sample rates: /s/ puts its frication in F5 and F6, and F6 at
+        // 5500 Hz is silenced at 8000 Hz, leaving /s/ 3.6x quieter. Scale the
+        // parallel formants down so the highest one lands just below the usable
+        // range, keeping their spacing and their sharpness; at 22050 Hz and
+        // above the factor is 1, so the sound there is unchanged.
+        let top = p.freq[NUM_FORMANTS - 1];
+        let par_scale = if top > 0.0 { (0.47 * sr as f64 / top).min(1.0) } else { 1.0 };
         for k in 0..NUM_FORMANTS {
             self.cascade[k].set(p.freq[k], p.bw[k], sr);
-            self.parallel[k].set_peak(p.freq[k], p.par_bw[k], sr);
+            self.parallel[k].set_peak(p.freq[k] * par_scale, p.par_bw[k] * par_scale, sr);
         }
+        // Widening a resonator caps its peak but widens its bandwidth, so the
+        // cascade passes more noise at low rates even after the density fix
+        // below: Steve's breathiness is still 1.5x hot at 8000 Hz, and at
+        // full strength it clips. Scale the aspiration noise by the ratio of
+        // the cascade's integrated noise response at 22050 Hz to its response
+        // at this rate, over the band that exists at this rate, so the noise
+        // power through the cascade stays what it is at 22050 Hz. The nasal
+        // filters are left out: their rate dependence is small next to the
+        // cascade's. The band is capped at the 22050 Hz band: above it the
+        // reference response is only its aliased extension, which inflates
+        // the integral and over-boosts the noise (breathiness 2.3x hot at
+        // 96000 Hz, 4880 samples at the rail). The scale never boosts: above
+        // 22050 Hz there is no widening to compensate, and the density fix
+        // alone keeps the noise level right there. At 22050 Hz the two
+        // integrals are identical, so the factor is 1 and the sound there is
+        // unchanged.
+        let band = 0.47 * sr.min(22050.0);
+        let steps = 32;
+        let mut ref_int = 0.0;
+        let mut sr_int = 0.0;
+        for i in 0..=steps {
+            let f = band * i as f64 / steps as f64;
+            let mut h_ref = 1.0;
+            let mut h_sr = 1.0;
+            for k in 0..NUM_FORMANTS {
+                h_ref *= response_sq_for(p.freq[k], p.bw[k], 22050.0, f);
+                h_sr *= self.cascade[k].response_sq(f, sr);
+            }
+            let weight = if i == 0 || i == steps { 0.5 } else { 1.0 };
+            ref_int += weight * h_ref;
+            sr_int += weight * h_sr;
+        }
+        self.cascade_noise_scale = (ref_int / sr_int).sqrt().min(1.0);
     }
 
     fn next_sample(&mut self, gains: &Gains) -> f64 {
@@ -202,15 +247,24 @@ impl Synth {
             noise *= 0.5;
         }
 
-        let mut cascade = voice + noise * gains.ah * ASPIRATION_SCALE;
+        // White noise has the same total power at every sample rate, so its
+        // spectral density rises as the band narrows: at 8000 Hz the noise
+        // through a fixed-width resonator is 2.8x denser than at 22050 Hz,
+        // and breathiness at full strength clips there (518 samples at the
+        // rail for Steve). Scale the noise that goes through resonators so
+        // its density stays what it is at 22050 Hz, the rate the engine was
+        // tuned at; the bypass below is raw noise, whose power is already
+        // rate-independent, so it stays unscaled. At 22050 Hz the factor is 1.
+        let density = (self.sample_rate as f64 / 22050.0).sqrt();
+        let mut cascade = voice + noise * gains.ah * ASPIRATION_SCALE * density * self.cascade_noise_scale;
         cascade = self.nasal_zero.process(cascade);
         cascade = self.nasal_pole.process(cascade);
         for resonator in &mut self.cascade {
             cascade = resonator.process(cascade);
         }
 
-        let frication = noise * gains.af;
-        let mut parallel = frication * gains.ab;
+        let frication = noise * gains.af * density;
+        let mut parallel = noise * gains.af * gains.ab;
         for (k, resonator) in self.parallel.iter_mut().enumerate() {
             let y = resonator.process(frication * gains.par[k]);
             // Neighbouring resonators are out of phase between their peaks;
@@ -328,5 +382,51 @@ mod tests {
         let mut synth = Synth::new(SR);
         let out = render_frames(&mut synth, &[loud; 50]);
         assert!(out.iter().all(|x| x.is_finite() && x.abs() <= 1.0));
+    }
+
+    /// Breathiness is noise through the cascade, and white noise is denser
+    /// in a narrower band: at full strength (72 dB) Steve's breathy vowels
+    /// were 2.2x louder at 8000 Hz than at 22050 Hz and clipped hard (518
+    /// samples at the rail). Scaling the noise that goes through resonators
+    /// so its spectral density stays at its 22050 Hz value keeps the level
+    /// in line at low rates.
+    #[test]
+    fn breathiness_keeps_its_level_at_low_sample_rates() {
+        use crate::{Voice, phoneme_frames};
+        let voice = Voice { breathiness: 72.0, ..Voice::default() };
+        let frames = phoneme_frames("[AA]", &voice).unwrap();
+        let mid = frames[frames.len() / 2].1;
+        let rms_at = |rate: u32| {
+            let mut synth = Synth::new(rate);
+            synth.jump_to(&mid);
+            let mut out = vec![0.0; rate as usize];
+            synth.render(&mid, &mut out);
+            (out.iter().map(|x| x * x).sum::<f32>() / out.len() as f32).sqrt()
+        };
+        let low = rms_at(8000);
+        let high = rms_at(22050);
+        assert!(low < 1.5 * high, "breathy /aa/ RMS at 8000 Hz is {low}, at 22050 Hz {high}");
+    }
+
+    /// /s/ puts its frication in F5 and F6, and F6 at 5500 Hz used to be
+    /// silenced at 8000 Hz, leaving /s/ 3.6x quieter than at 22050 Hz.
+    /// Scaling the parallel formants down so the highest lands just below the
+    /// usable range keeps the fricative in the band.
+    #[test]
+    fn fricatives_keep_their_level_at_low_sample_rates() {
+        use crate::{Voice, phoneme_frames};
+        let voice = Voice::default();
+        let frames = phoneme_frames("[S]", &voice).unwrap();
+        let mid = frames[frames.len() / 2].1;
+        let rms_at = |rate: u32| {
+            let mut synth = Synth::new(rate);
+            synth.jump_to(&mid);
+            let mut out = vec![0.0; rate as usize];
+            synth.render(&mid, &mut out);
+            (out.iter().map(|x| x * x).sum::<f32>() / out.len() as f32).sqrt()
+        };
+        let low = rms_at(8000);
+        let high = rms_at(22050);
+        assert!(low > 0.5 * high, "/s/ RMS at 8000 Hz is {low}, at 22050 Hz {high}");
     }
 }

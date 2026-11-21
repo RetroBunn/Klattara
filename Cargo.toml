@@ -1,7 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["src/engine", "src/plat/klattpad", "src/plat/windows"]
+members = ["src/engine", "src/plat/klattpad", "src/plat/windows", "src/plat/macos/rust", "src/plat/android/rust", "src/plat/linux", "src/plat/web"]
 
 [profile.release]
+# No symbol table in release builds: the Windows import libraries' symbols
+# otherwise carry the build folder's path.
+strip = "symbols"
 lto = true
 codegen-units = 1

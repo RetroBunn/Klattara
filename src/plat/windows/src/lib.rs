@@ -194,13 +194,13 @@ unsafe fn set(
 }
 
 /// Sets the speaking rate: 1.0 is about 200 words per minute, 2.0 twice as
-/// fast. Valid from 0.25 to 8.
+/// fast. Valid from about 0.2 to 8.5 (30 to 1920 words per minute).
 ///
 /// # Safety
 /// `engine` must be null or a live engine from [`klattara_create`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn klattara_set_rate(engine: *mut KlattaraEngine, rate: f64) -> c_int {
-    unsafe { set(engine, rate, 0.25..=8.0, |voice, value| voice.rate = value) }
+    unsafe { set(engine, rate, engine::SLOWEST_RATE..=engine::FASTEST_RATE, |voice, value| voice.rate = value) }
 }
 
 /// Sets the base pitch in Hz, from 40 to 550. Each voice has its own default,
@@ -437,6 +437,34 @@ mod tests {
             klattara_destroy(engine);
         }
         audio
+    }
+
+    /// Loud vowels used to drive the soft limiter to the rail at 8000 Hz:
+    /// formants near Nyquist blew the cascade's peak gain up, and a steady
+    /// /iy/ peaked at 3.4 before the limiter. With the resonator peak gain
+    /// capped at its tuned-rate value, no sample reaches full scale.
+    #[test]
+    fn loud_vowels_do_not_reach_full_scale_at_8000_hz() {
+        let engine = klattara_create(8000);
+        assert!(!engine.is_null());
+        let mut audio: Vec<i16> = Vec::new();
+        let user = (&mut audio as *mut Vec<i16>).cast::<c_void>();
+        unsafe {
+            assert_eq!(
+                klattara_speak(
+                    engine,
+                    c"Ah, oh, ee, oo, ah.".as_ptr(),
+                    KLATTARA_READ_TEXT,
+                    Some(collect),
+                    user
+                ),
+                KLATTARA_OK
+            );
+            klattara_destroy(engine);
+        }
+        assert!(!audio.is_empty());
+        let at_rail = audio.iter().filter(|&&s| s.abs() >= 32767).count();
+        assert_eq!(at_rail, 0, "{} of {} samples at full scale", at_rail, audio.len());
     }
 
     #[test]

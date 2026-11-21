@@ -40,16 +40,28 @@ The add-on needs NVDA 2025.1 or later, on Windows 10 or later. It works in both 
 
 You find these in NVDA's Voice settings, opened with NVDA+Control+V.
 
-1. Voice: Standard Steve, the default, Breezy Brittany, Giant Gary, Delicate David or Tiny Taylor. Each voice's pitch and inflection are stored with it, so choosing a voice sets those two sliders to that voice's values. A change you make to them lasts until you choose another voice.
-2. Rate: 15 is the normal rate, about 190 words per minute. 41 or 42 is about 430 words per minute, the fastest rate where Klattara has tested clearest so far. The slider goes up to about 950 words per minute, so there is no separate rate boost.
-3. Pitch: 14 is Steve's own pitch, 110 Hz, 33 is Brittany's, 210 Hz, 7 is Gary's, 78 Hz, 19 is David's, 138 Hz, and 45 is Taylor's, 270 Hz.
+1. Voice: Standard Steve, the default, Breezy Brittany, Giant Gary, Delicate David or Tiny Taylor. Each voice's pitch, inflection and voice quality are stored with it, so choosing a voice sets those sliders to that voice's values. A change you make to them lasts until you choose another voice. Saved values have the last word on loading, as with pitch.
+2. Rate: 15 is the normal rate, about 190 words per minute. 41 or 42 is about 430 words per minute, the fastest rate where Klattara has tested clearest so far. The slider goes up to about 950 words per minute, so there is no separate rate boost. For an exact rate, open NVDA Settings, then the Klattara category, and set "Speech rate in words per minute": 190 is the normal rate, 38 the slowest and 1796 the fastest the engine takes. The rate is the engine's measured table, not words per minute divided by 190, so 380 is 1.87 times normal and 1600 is 7.17 times normal. Moving the rate slider switches the exact rate off again.
+3. Pitch: 14 is Steve's own pitch, 110 Hz, 33 is Brittany's, 210 Hz, 7 is Gary's, 78 Hz, 19 is David's, 138 Hz, and 45 is Taylor's, 270 Hz. For an exact pitch, open NVDA Settings, then the Klattara category, and set "Base pitch in hertz": the engine takes 40 to 550 Hz. Moving the pitch slider switches the exact pitch off again. The hertz value follows the voice while the exact pitch is off, so turning it on starts at the voice's own pitch.
 4. Inflection: 40, normal pitch movement, is Steve's and Brittany's, 34 is Gary's, 32 is David's and 46 is Taylor's. Set it to 0 for a monotone.
 5. Expand abbreviations: checked by default. When checked, "Dr." is read "doctor" and "Calif." is read "California". When unchecked, abbreviations are read as written: spelled out when they have no vowel, and sounded out when they do.
 6. Phrase prediction: unchecked by default, as most screen reader users prefer. When checked, a long sentence without commas is broken into phrases where a reader would break it, such as before "which" or "toward": the pitch falls a little and starts afresh, with no pause. It can make long sentences in documents easier to follow.
+7. Flutter: off by default. How much the pitch wavers, slowly and unevenly, as a shaky voice does. David has the most of it, at 60, where the other voices have 25.
+8. Head size: the size of the head, as a percentage: a larger head lowers the formants, as a longer vocal tract does. Gary is at 120, David at 94 and Taylor at 89.
+9. Roughness: how uneven the voice is from one pulse to the next. Gary is at 8 and David at 16.
+10. Breathiness: the level of breath noise through the voice, in dB. Brittany is at 36, David at 52 and Taylor at 24.
+11. Open quotient: how long the vocal folds stay open in each cycle, as a percentage: a longer open phase sounds fuller and less buzzy. Steve is at 55, Brittany at 65, Gary at 60, David at 70 and Taylor at 58.
+12. Smoothness: how soft the voice is: more takes the edge off it, but not off consonants. Brittany is at 12, Gary at 8, David at 28 and Taylor at 4.
+13. Female vocal tract: when checked, the voice uses the female model of the vocal tract, with its higher formants, whatever voice is chosen. Brittany and Taylor use it.
+14. Baseline fall, hat rise, stress rise and quickness: how the voice moves its pitch through a phrase, DECtalk's bf, hr, sr and qu. Steve is at 18, 18, 32 and 40; Brittany at 12, 16, 36 and 58; Gary at 10, 22, 26 and 14; David at 8, 14, 20 and 6; Taylor at 5, 20, 42 and 72.
+15. Lax breathiness: breath that comes up and softens the voice only at the ends of sentences and just before voiceless sounds, DECtalk's lx. Brittany is at 65, Gary at 8, David at 70 and Taylor at 30.
+16. Sample rate: the rate the synthesizer runs at, chosen from twenty rates in Hz, from 8000 to 96000. 22050 is the default. Higher rates carry more of the hiss of S and F, lower ones sound duller. At 8000 Hz the engine widens the highest formants so loud vowels stay off the rail, and the fricatives are brought down into the band, so S keeps its hiss. The hiss and breathiness are kept at the same level at every rate, so full breathiness doesn't clip at 8000, and the noise scaling never boosts above 22050, so it doesn't clip at 96000 either. All twenty rates from 8000 to 96000 are covered.
 
 ## KlattPad
 
 KlattPad is a window for typing text and hearing Klattara speak it. It is a plain Windows program, klattpad.exe, that needs nothing else installed, and it is built from standard Windows controls so that screen readers can read all of it.
+
+KlattPad also runs in any web browser, on a Mac, Linux, a Chromebook or a phone: see src/plat/web. It has the same controls, plus a choice of sampling rate.
 
 The window has a multi-line edit field on the left. On the right, from top to bottom, are the Voice box and the Rate and Volume sliders, and along the bottom are the Play, Pause and Stop buttons. The Rate slider works as the NVDA add-on's does, with 15 as normal, and the Volume slider starts at full.
 
@@ -86,7 +98,7 @@ On 32-bit Windows, the functions and the audio callback use the C calling conven
 - `klattara_voice_gender(index)` returns a voice's gender, `KLATTARA_MALE` or `KLATTARA_FEMALE`, or `KLATTARA_INVALID` if there is no such voice.
 - `klattara_set_voice(engine, index)` changes to a voice: its gender, pitch, inflection and voice quality. Rate, volume and how text is read stay as they are.
 - `klattara_set_gender(engine, gender)` sets which model of the vocal tract the current voice uses, for making a voice of your own. Nothing else changes, so set the pitch as well.
-- `klattara_set_rate(engine, rate)` sets the speaking rate. 1.0 is normal and 2.0 twice as fast. The range is 0.25 to 8.
+- `klattara_set_rate(engine, rate)` sets the speaking rate. 1.0 is normal and 2.0 twice as fast. The range is 0.2032 to 8.5276, which is 30 to 1920 words per minute.
 - `klattara_set_pitch(engine, hz)` sets the base pitch, 40 to 550 Hz. Each voice has its own default, 110 for Steve, 210 for Brittany, 78 for Gary, 138 for David and 270 for Taylor.
 - `klattara_set_inflection(engine, inflection)` sets the pitch movement, from 0 for a monotone through 1 for normal, up to 2.5. Each voice has its own default, 1 for both Steve and Brittany, 0.85 for Gary, 0.8 for David and 1.15 for Taylor.
 - `klattara_set_volume(engine, volume)` sets the volume, from 0 for silence through 1 for normal, up to 2.
@@ -172,7 +184,7 @@ F1 to F3 change with every sound, so they have no settings. F4 to F6 stay put, w
 
 Three more commands don't depend on the voice, so a change of voice leaves them as they are, along with phoneme input and the vibrato settings below:
 
-- `[:speed 400]` or `[:spd 400]` sets the speed, in words per minute, from 38 to 1796. That is the pace on ordinary text: short sentences run slower than the number, and long ones with few pauses faster.
+- `[:speed 400]` or `[:spd 400]` sets the speed, in words per minute, from 30 to 1920. That is the pace on ordinary text: short sentences run slower than the number, and long ones with few pauses faster.
 - `[:volume 50]` sets the volume as a percentage, from 0 to 200, where 100 is normal.
 - `[:reset]` returns every setting to how an engine starts, including the voice, speed, volume, vibrato, phoneme input, and the settings for abbreviations and phrase prediction.
 
@@ -297,6 +309,8 @@ The tools in src/tools measure how clear the voice is, using a speech recognizer
 - src/engine: the speech engine, as a Rust library, with examples.
 - src/plat/windows: klattara.dll and its C header.
 - src/plat/klattpad: KlattPad and its tests.
+- src/plat/web: KlattPad on the web, with the engine as WebAssembly.
+- src/plat/ios: the voices for VoiceOver on iPhone and iPad, from the Mac version's sources.
 - src/plat/nvda: the NVDA add-on, its build script and its tests.
 - src/data: the pronouncing dictionary, the hand-written additions to it, the letter-to-sound model and the homograph table.
 - src/tools: Python tools for measuring clarity and for rebuilding the data.

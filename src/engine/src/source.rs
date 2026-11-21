@@ -3,6 +3,17 @@
 use crate::singing::VIBRATO_SPEED;
 use std::f64::consts::PI;
 
+/// The most the glottal phase may move in one sample: a period of at least
+/// four samples, so the highest pitch the source makes is a quarter of the
+/// sample rate (5512 Hz at 22050 Hz, 2000 Hz at 8000 Hz). The polyBLEP that
+/// smooths each closure needs the two halves of its window, `dt` either side,
+/// not to overlap, which is any step under one half; a quarter keeps clear of
+/// that. It was 0.05 (twenty samples a period), which capped the pitch at
+/// 551 Hz at 11025 Hz and 400 Hz at 8000 Hz, flattening the top of every
+/// contour that reached it, so a high voice or a wide inflection lost its
+/// peaks at the low sample rates.
+const MAX_PHASE_STEP: f64 = 0.25;
+
 /// Flutter is a share of F0 in KLSYN88, so it grows with pitch: at 400 Hz it
 /// sounded like vibrato. Above this pitch it stays the size it is here, in Hz.
 const FLUTTER_CEILING_HZ: f64 = 150.0;
@@ -230,7 +241,7 @@ impl GlottalSource {
         } else {
             self.weak_pulse = false;
         }
-        self.phase_step = (f0 / self.sample_rate).clamp(1e-6, 0.05);
+        self.phase_step = (f0 / self.sample_rate).clamp(1e-6, MAX_PHASE_STEP);
         self.period_oq = (self.oq * (1.0 - CREAK_OQ_DROP * c)).clamp(0.2, 0.9);
     }
 }
@@ -499,6 +510,24 @@ mod tests {
             // Each closure is a single upward jump through −0.5.
             let closures = wave.windows(2).filter(|w| w[0] < -0.5 && w[1] >= -0.5).count();
             assert!((closures as f64 - f0).abs() <= 1.0, "f0 {f0}: {closures} closures");
+        }
+    }
+
+    /// High pitches are made at their own rate, not flattened at a ceiling: the
+    /// source used to stop at a twentieth of the sample rate (1102 Hz here,
+    /// 551 Hz at 11025 Hz), cutting the top off a high voice's contour.
+    #[test]
+    fn high_pitches_are_not_flattened() {
+        for (sample_rate, f0) in [(22050.0, 1500.0), (22050.0, 3000.0), (11025.0, 900.0), (8000.0, 1200.0)] {
+            let mut source = GlottalSource::new(sample_rate);
+            source.set_targets(f0, 0.5);
+            let wave: Vec<f64> = (0..sample_rate as usize).map(|_| source.next_sample()).collect();
+            // One closure a period: count the period starts from the phase instead
+            // of the waveform, which at a few samples a period is too coarse to read.
+            let periods = (f0 / sample_rate).min(MAX_PHASE_STEP) * sample_rate;
+            assert!((periods - f0).abs() < 1.0, "{f0} Hz at {sample_rate}: the source made {periods} periods a second");
+            assert!(wave.iter().all(|y| y.is_finite() && y.abs() < 4.0), "{f0} Hz at {sample_rate}: the pulse stays sound");
+            assert!((source.phase_step * sample_rate - f0).abs() < 1.0, "{f0} Hz at {sample_rate}: step {}", source.phase_step);
         }
     }
 

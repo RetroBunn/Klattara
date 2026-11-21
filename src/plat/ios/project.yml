@@ -1,0 +1,59 @@
+name: KlattaraiOS
+options:
+  bundleIdPrefix: com.dgomeze42
+  deploymentTarget:
+    iOS: "16.0"
+  minimumXcodeGenVersion: "2.35"
+
+# The same app, voice extension and engine as on the Mac (../macos/Sources), for
+# iPhone and iPad.
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.9.7"
+    CURRENT_PROJECT_VERSION: "1"
+    KLATTARA_BUNDLE_ID: com.dgomeze42.klattara
+    # On iPhone and iPad an App Group is named group.<something>.
+    KLATTARA_APP_GROUP: group.com.dgomeze42.klattara
+    DEVELOPMENT_TEAM: J4PD64C33Q
+    CODE_SIGN_STYLE: Automatic
+    TARGETED_DEVICE_FAMILY: "1,2"
+    SWIFT_INCLUDE_PATHS: $(SRCROOT)/../macos/CKlattara
+    "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]": $(SRCROOT)/lib/iphoneos
+    "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]": $(SRCROOT)/lib/iphonesimulator
+    OTHER_LDFLAGS: -lklattara
+    DEAD_CODE_STRIPPING: "YES"
+
+targets:
+  Klattara:
+    type: application
+    platform: iOS
+    sources:
+      - path: ../macos/Sources/App
+        excludes: ["Info.plist", "*.entitlements"]
+      - path: ../macos/Sources/Shared
+    dependencies:
+      - target: KlattaraVoices
+        embed: true
+        codeSign: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(KLATTARA_BUNDLE_ID)
+        PRODUCT_NAME: Klattara
+        INFOPLIST_FILE: Support/App-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Support/Klattara.entitlements
+
+  KlattaraVoices:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ../macos/Sources/Extension
+        excludes: ["Info.plist", "*.entitlements"]
+      - path: ../macos/Sources/Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(KLATTARA_BUNDLE_ID).voices
+        PRODUCT_NAME: KlattaraVoices
+        INFOPLIST_FILE: Support/Voices-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Support/KlattaraVoices.entitlements
+        SKIP_INSTALL: "YES"

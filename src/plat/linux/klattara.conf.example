@@ -1,0 +1,29 @@
+# Klattara's settings: ~/.config/klattara/klattara.conf
+# Used by the klattara command and by Speech Dispatcher (Orca). The command line
+# wins over these, and Speech Dispatcher's rate, pitch and volume scale them.
+# Remove the # from a line to use it.
+
+# voice = steve              # steve, brittany, gary, david or taylor
+# rate = 190                 # words per minute, 30 to 1920
+# pitch = voice              # the voice's own, or an exact base pitch, 40 to 550 Hz
+# inflection = 100           # how much the pitch moves, 0 to 250 percent
+# volume = 100               # 0 to 200 percent
+# flutter = 0                # how much the pitch wavers, 0 (off) to 100
+# abbreviations = yes        # read "Dr." as "doctor"
+# phrase-prediction = no
+# sample-rate = 22050        # 8000 to 96000: 8000 10000 11000 11025 12000 16000 20000 22000
+#                            # 22050 24000 32000 40000 44000 44100 48000 64000 80000 88000 88200 96000
+
+# Any of a voice's [:cv] settings, for one voice or for all:
+# cv.gary = hs 110 br 20
+# cv = sm 10
+#   pi pitch, in inflection, hs head size, rg roughness, br breathiness, rc richness,
+#   sm smoothness, ge gender (f or m), f4 f5 f6 upper formants, b4 b5 b6 their
+#   bandwidths, fl flutter, vvl fvl avl nvl source levels, fa baseline fall,
+#   ha hat rise, st stress rise, qk quickness, lx lax breathiness, oq open quotient
+
+# Pronunciation dictionaries, as many as you like; a later one wins.
+# dictionary = ~/.config/klattara/my-words.dict
+
+# The audio player, if not paplay, pw-cat or aplay; {rate} is the sample rate.
+# player = aplay -q -t raw -f S16_LE -r {rate} -c 1 -

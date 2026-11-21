@@ -16,3 +16,4 @@ __pycache__/
 /TGSpeechBox
 # SharpVox, a separate repository, kept here for reference.
 /sharpVoxTTS
+/tools-local

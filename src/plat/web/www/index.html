@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KlattPad</title>
+<meta name="description" content="Type text and hear Klattara, a Klatt-style formant speech synthesizer, speak it, right in your browser.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f5;
+    --panel: #ffffff;
+    --text: #1d1d1b;
+    --muted: #5b5b57;
+    --line: #cfcfc9;
+    --accent: #2457c5;
+    --accent-text: #ffffff;
+    --focus: #e08a00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615;
+      --panel: #222220;
+      --text: #ecece8;
+      --muted: #a9a9a3;
+      --line: #46463f;
+      --accent: #7ea2ff;
+      --accent-text: #0e1220;
+      --focus: #ffb547;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { margin: 0 0 4px; font-size: 1.6rem; }
+  .intro { margin: 0 0 20px; color: var(--muted); }
+  .pad {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  @media (max-width: 720px) { .pad { grid-template-columns: 1fr; } }
+  label { display: block; font-weight: 600; margin-bottom: 4px; }
+  textarea {
+    width: 100%;
+    min-height: 340px;
+    resize: vertical;
+    padding: 10px;
+    font: 1rem/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    tab-size: 4;
+  }
+  select, input[type=range], input[type=number] { width: 100%; }
+  input[type=number] {
+    padding: 6px;
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  h2 { font-size: 1.2rem; margin: 28px 0 4px; }
+  .quality-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .help { color: var(--muted); font-size: 0.85rem; margin: 2px 0 0; }
+  .controls label input[type=checkbox] { width: auto; margin-right: 6px; }
+  .group { margin-top: 18px; }
+  .group h3 { font-size: 1rem; margin: 0 0 8px; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .row input { flex: 1; }
+  select {
+    padding: 6px;
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .controls { display: flex; flex-direction: column; gap: 14px; }
+  .value { color: var(--muted); font-weight: 400; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  button {
+    font: inherit;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  #status { min-height: 1.5em; margin: 12px 0 0; color: var(--muted); }
+  details { margin-top: 24px; }
+  summary { cursor: pointer; font-weight: 600; }
+  code { font: 0.95em ui-monospace, Menlo, Consolas, monospace; }
+  kbd {
+    font: 0.9em ui-monospace, Menlo, Consolas, monospace;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>KlattPad</h1>
+  <p class="intro">Type text and hear Klattara speak it, with every setting it has. Everything runs in your browser; nothing you type is sent anywhere.</p>
+
+  <div class="pad">
+    <div>
+      <label for="text">Text</label>
+      <textarea id="text" spellcheck="false" aria-describedby="keys"></textarea>
+      <p id="keys" class="sr-only">F5 plays the selection or all the text, F6 pauses or resumes, F7 stops.</p>
+    </div>
+    <div class="controls">
+      <div>
+        <label for="voice">Voice</label>
+        <select id="voice"></select>
+      </div>
+      <div>
+        <label for="wpm">Rate in words per minute <span class="value">(30 to 1920, 190 normal)</span></label>
+        <input id="wpm" type="number" min="30" max="1920" step="10" value="190">
+      </div>
+      <div>
+        <label><input id="exact-pitch" type="checkbox"> Use base pitch in hertz</label>
+        <label for="pitch">Base pitch in hertz <span class="value">(40 to 550)</span></label>
+        <input id="pitch" type="number" min="40" max="550" step="5" value="110" disabled>
+      </div>
+      <div>
+        <label for="inflection">Inflection, percent <span class="value">(0 to 250)</span></label>
+        <input id="inflection" type="number" min="0" max="250" step="10" value="100">
+      </div>
+      <div>
+        <label for="flutter">Flutter <span class="value" id="flutter-value">off</span></label>
+        <input id="flutter" type="range" min="0" max="100" step="5" value="0">
+      </div>
+      <div>
+        <label for="volume">Volume, percent <span class="value">(0 to 200)</span></label>
+        <input id="volume" type="number" min="0" max="200" step="10" value="100">
+      </div>
+      <div>
+        <label><input id="abbreviations" type="checkbox" checked> Read abbreviations in full</label>
+        <label><input id="phrase" type="checkbox"> Phrase prediction</label>
+      </div>
+      <div>
+        <label for="sample-rate">Sampling rate</label>
+        <select id="sample-rate"></select>
+      </div>
+    </div>
+  </div>
+
+  <div class="buttons">
+    <button id="play" class="primary" disabled>Play</button>
+    <button id="pause" disabled>Pause</button>
+    <button id="stop" disabled>Stop</button>
+    <button id="wav" disabled>Export WAV</button>
+    <button id="open">Open text file</button>
+    <button id="save">Save text</button>
+    <input id="file" type="file" accept=".txt,text/plain" hidden>
+  </div>
+  <p id="status" role="status" aria-live="polite">Loading Klattara…</p>
+
+  <section class="quality" aria-labelledby="quality-heading">
+    <h2 id="quality-heading">Voice settings: <span id="voice-name"></span></h2>
+    <p class="intro">Each voice's own settings, which you can change; empty means the voice's own (or automatic). Changing voice shows that voice's.</p>
+    <div id="quality"></div>
+    <div class="buttons"><button id="reset">Reset this voice to its own settings</button></div>
+  </section>
+
+  <details>
+    <summary>Keys and commands</summary>
+    <p><kbd>F5</kbd> plays (the selection if there is one, otherwise all the text), <kbd>F6</kbd> pauses and resumes, <kbd>F7</kbd> stops. A change to any setting applies the next time you play.</p>
+    <p>Text goes straight to the engine, so commands work, as in DECtalk:</p>
+    <ul>
+      <li><code>[:vs]</code>, <code>[:vb]</code>, <code>[:vg]</code>, <code>[:vd]</code>, <code>[:vt]</code> change to Steve, Brittany, Gary, David or Taylor.</li>
+      <li><code>[:speed 300]</code> sets words per minute; <code>[:cv pi 150 hs 110 br 40]</code> customizes the voice.</li>
+      <li><code>[:phone klattara enable]</code> lets you write sounds in ARPAbet, such as <code>[HH AH0 L OW1]</code>, and sing notes: <code>[AA1&lt;400,20&gt;]</code> sings note 20 for 400 ms.</li>
+    </ul>
+    <p>Klattara is open source: <a href="https://github.com/dgomez42/Klattara">github.com/dgomez42/Klattara</a>.</p>
+  </details>
+</main>
+<script src="klattpad.js"></script>
+</body>
+</html>

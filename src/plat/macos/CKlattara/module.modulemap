@@ -1,0 +1,6 @@
+module CKlattara {
+    header "../../windows/klattara.h"
+    header "klattara_mac.h"
+    link "klattara"
+    export *
+}

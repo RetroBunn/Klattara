@@ -79,7 +79,8 @@ int KLATTARA_CALL klattara_set_voice(KlattaraEngine *engine, int index);
  * the pitch as well. */
 int KLATTARA_CALL klattara_set_gender(KlattaraEngine *engine, int gender);
 
-/* Speaking rate: 1.0 is about 200 words per minute, 2.0 twice as fast (0.25 to 8). */
+/* Speaking rate: 1.0 is about 200 words per minute, 2.0 twice as fast (0.2032 to 8.5276,
+ * which is 30 to 1920 words per minute). */
 int KLATTARA_CALL klattara_set_rate(KlattaraEngine *engine, double rate);
 
 /* Base pitch in Hz (40 to 550; each voice has its own default, 110 for the first). */
@@ -144,7 +145,7 @@ int KLATTARA_CALL klattara_set_phrase_prediction(KlattaraEngine *engine, int pre
  *     oq  open quotient, 20 to 90 percent, another way to set what rc sets
  * Changing voice replaces all of these with that voice's own. These don't depend on
  * the voice:
- *   [:speed 400] or [:spd 400]  speed, 38 to 1796 words per minute on ordinary text
+ *   [:speed 400] or [:spd 400]  speed, 30 to 1920 words per minute on ordinary text
  *   [:volume 50]                volume, 0 to 200 percent, where 100 is normal
  *   [:vibspeed 6.2]             how fast a sung note's vibrato swings, 0 to 20 Hz
  *   [:vibdepth 25]              how far it swings either way, 0 to 200 cents

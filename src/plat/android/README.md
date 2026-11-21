@@ -1,0 +1,102 @@
+# Klattara for Android
+
+Klattara as an Android text-to-speech engine, for TalkBack, other screen readers, braille notetakers and
+every app that speaks, from Android 2.2 (API 8) on phones, tablets, notetakers and Wear OS watches. Install
+the APK, choose Klattara as the preferred engine (Settings, Accessibility, Text-to-speech output; on 2.2 to
+3.2, Settings, Voice input and output, Text-to-speech settings, where Klattara is ticked first), and it speaks: everything is in the app, nothing is downloaded.
+
+Features, as on the Mac: the five voices, chosen as the voice profile, which Klattara speaks with everywhere
+on every Android version; rate from 30 to 1920 words per minute, following the screen reader's rate or
+exact; exact base pitch in hertz; inflection; flutter (off by default); volume; abbreviations; phrase
+prediction; all twenty sampling rates, 8000 to 96000 hertz (48000 at most before Android 5, the most its audio can play); every
+documented `[:cv]` voice setting, kept per voice; your own pronunciation dictionaries; and a test box that
+speaks directly or through Android, and saves WAV files.
+
+## The builds
+
+| Flavor | Android | Processors | For |
+|---|---|---|---|
+| `anyDevice` | 2.2+ | all four (and ARMv5 from 2.2) | any device: install this if unsure |
+| `android2` | 2.2+ | ARM (ARMv5 and newer) | Android 2.2 to 3.2 phones (smallest) |
+| `legacy` | 4.0+ | 32-bit ARM, x86 | Android 4.x phones and notetakers (smaller) |
+| `modernArm64` | 5.0+ | 64-bit ARM | most phones and notetakers today |
+| `modernArm32` | 5.0+ | 32-bit ARM | older or lower-cost devices |
+| `modernX86_64` | 5.0+ | 64-bit Intel | emulators, Chromebooks |
+| `modernX86` | 5.0+ | 32-bit Intel | older Intel tablets, emulators |
+| `watch` | 7.1+ (Wear OS) | 64-bit and 32-bit ARM | Pixel Watch, Galaxy Watch and others |
+
+All share one application ID and version code, so any one replaces another.
+
+## Building
+
+Needs the Android SDK (with platform 35) and NDK (27 or newer), Java 17, Python 3 and Rust with the Android
+targets:
+
+```
+rustup target add armv7-linux-androideabi aarch64-linux-android i686-linux-android x86_64-linux-android
+./build-native.sh          # the engine, into app/src/main/jniLibs/<abi>/libklattara.so
+./gradlew assembleRelease  # every flavor, into app/build/outputs/apk/<flavor>/release/
+```
+
+Set `ANDROID_HOME` (or write `sdk.dir=...` in `local.properties`). The source zip already holds built engine
+libraries, so changes to the Java side alone only need the Gradle step. The release builds are signed with
+the debug key so they install straight away; use your own key to publish.
+
+## How it fits together
+
+- `rust/` is a static library: the engine's C interface (`../windows/src/lib.rs`, unchanged, so it is the
+  same as `klattara.dll` and the Mac's), each voice's own `[:cv]` values (`../shared/voice_settings.rs`) and
+  the dictionaries (`../shared/dictionary.rs`).
+- `jni/klattara_jni.c` is the bridge to Java. Text crosses as UTF-8 bytes; audio is handed over in chunks of
+  the size Android's synthesis callback takes, and each chunk can stop speech at once.
+- `app/` is plain Java on Android's own APIs (no support libraries, which no longer reach Android 4.0):
+  `KlattaraTtsService` is the engine, `Synthesizer` speaks for it, the settings screen and WAV export alike,
+  and `SettingsActivity` is the settings screen, built from standard controls for TalkBack and notetakers.
+  Choices such as the voice profile and the sampling rate are buttons that open a dialog listing every
+  option, rather than drop-down lists, which some notetakers' screen readers cannot reach.
+
+### Android 2.2 to 3.2
+
+Before 4.0 Android has no engine service for apps: its speech service loads a native plugin instead, the
+`libtts<name>.so` of any app with an activity for `android.intent.action.START_TTS_ENGINE` (the
+`.Klattara` alias in the manifest), and calls it through the C++ `TtsEngine` class of
+`frameworks/base/include/tts/TtsEngine.h` (the same from 2.2 to 3.2). `jni/legacy_plugin.c` is that class,
+written out as its vtable in C, over `rust/src/legacy.rs`; the same library also carries the JNI bridge, so
+the app loads it as `libttsklattara.so` there. The plugin runs in Android's speech service, not in the app,
+so the app writes its settings to `files/klattara.conf` (and dictionaries as `files/dictionary-*`), readable
+by the service, and the plugin reads them again before each utterance when they have changed.
+
+It is built with NDK r10e for `armeabi` (ARMv5TE) and `armeabi-v7a`, against android-8:
+
+```
+./build-legacy-docker.sh ~/android-sdk/legacy-ndk   # on a Mac, in an amd64 Linux container
+./build-legacy.sh /path/to/android-ndk-r10e         # on Linux
+```
+
+into `app/src/legacyPlugin/jniLibs/`. The build links with no undefined symbols, refuses text relocations,
+and checks every instruction against ARMv5 (`tools/check_armv5.awk`). `jni/test/` checks the vtable against
+the real `TtsEngine.h` by calling the engine through it as Android would (`legacy_plugin_abi_test.cpp`).
+
+### Running on Android 4.0
+
+Two things in Rust's standard library are newer than Android 4.0 and would stop the library loading there:
+its allocator calls `posix_memalign` (Android 4.2), and its unwinder `dl_iterate_phdr` (Android 5.0 on
+32-bit ARM). The library uses its own allocator on `malloc` and `memalign`, and the bridge supplies a
+`dl_iterate_phdr` that hands over to the system's where there is one and otherwise describes this library
+alone, which is all the unwinder needs. `build-native.sh` then checks every system function each library
+imports against Android's own records (`tools/bionic-android11/`, from bionic) and fails the build if any is
+newer than the oldest Android that library is for.
+
+## Testing
+
+`adb shell am start -a com.dgomeze42.klattara.SELF_TEST -n com.dgomeze42.klattara/.SettingsActivity` runs a
+check through Android's speech service (Android 5.0 and newer): every voice at normal and double speed, the
+time to the first audio, and the dictionary through the native bridge. The results go to the log under
+`KlattaraSelfTest`.
+
+## Dictionaries
+
+Text files, one entry a line: a word and its sounds in ARPAbet (`aback AH0 B AE1 K`, the format of
+Klattara's `extra_words.dict` and CMUdict, so those files load as they are), or a word, `=`, and how to say
+it (`nvda = en vee dee ay`). `#` starts a comment. Every sound is checked when a file is added; lines with
+mistakes are left out and counted, never spoken. A later dictionary wins over an earlier one.
