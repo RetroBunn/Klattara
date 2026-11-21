@@ -28,6 +28,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "klattara-web"
+version = "1.9.7"
+dependencies = [
+ "klattara",
+]
+
+[[package]]
 name = "klattara-windows"
 version = "1.0.0"
 dependencies = [

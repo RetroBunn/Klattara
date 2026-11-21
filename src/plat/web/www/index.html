@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KlattPad</title>
+<meta name="description" content="Type text and hear Klattara, a Klatt-style formant speech synthesizer, speak it, right in your browser.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f5;
+    --panel: #ffffff;
+    --text: #1d1d1b;
+    --muted: #5b5b57;
+    --line: #cfcfc9;
+    --accent: #2457c5;
+    --accent-text: #ffffff;
+    --focus: #e08a00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615;
+      --panel: #222220;
+      --text: #ecece8;
+      --muted: #a9a9a3;
+      --line: #46463f;
+      --accent: #7ea2ff;
+      --accent-text: #0e1220;
+      --focus: #ffb547;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { margin: 0 0 4px; font-size: 1.6rem; }
+  .intro { margin: 0 0 20px; color: var(--muted); }
+  .pad {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  @media (max-width: 720px) { .pad { grid-template-columns: 1fr; } }
+  label { display: block; font-weight: 600; margin-bottom: 4px; }
+  textarea {
+    width: 100%;
+    min-height: 340px;
+    resize: vertical;
+    padding: 10px;
+    font: 1rem/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    tab-size: 4;
+  }
+  select, input[type=range] { width: 100%; }
+  select {
+    padding: 6px;
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .controls { display: flex; flex-direction: column; gap: 14px; }
+  .value { color: var(--muted); font-weight: 400; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  button {
+    font: inherit;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  #status { min-height: 1.5em; margin: 12px 0 0; color: var(--muted); }
+  details { margin-top: 24px; }
+  summary { cursor: pointer; font-weight: 600; }
+  code { font: 0.95em ui-monospace, Menlo, Consolas, monospace; }
+  kbd {
+    font: 0.9em ui-monospace, Menlo, Consolas, monospace;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>KlattPad</h1>
+  <p class="intro">Type text and hear Klattara speak it. Everything runs in your browser; nothing you type is sent anywhere.</p>
+
+  <div class="pad">
+    <div>
+      <label for="text">Text</label>
+      <textarea id="text" spellcheck="false" aria-describedby="keys"></textarea>
+      <p id="keys" class="sr-only">F5 plays the selection or all the text, F6 pauses or resumes, F7 stops.</p>
+    </div>
+    <div class="controls">
+      <div>
+        <label for="voice">Voice</label>
+        <select id="voice"></select>
+      </div>
+      <div>
+        <label for="rate">Rate <span class="value" id="rate-value"></span></label>
+        <input id="rate" type="range" min="0" max="100" step="1" value="15">
+      </div>
+      <div>
+        <label for="volume">Volume <span class="value" id="volume-value"></span></label>
+        <input id="volume" type="range" min="0" max="100" step="1" value="100">
+      </div>
+      <div>
+        <label for="sample-rate">Sampling rate</label>
+        <select id="sample-rate"></select>
+      </div>
+    </div>
+  </div>
+
+  <div class="buttons">
+    <button id="play" class="primary" disabled>Play</button>
+    <button id="pause" disabled>Pause</button>
+    <button id="stop" disabled>Stop</button>
+    <button id="wav" disabled>Export WAV</button>
+    <button id="open">Open text file</button>
+    <button id="save">Save text</button>
+    <input id="file" type="file" accept=".txt,text/plain" hidden>
+  </div>
+  <p id="status" role="status" aria-live="polite">Loading Klattara…</p>
+
+  <details>
+    <summary>Keys and commands</summary>
+    <p><kbd>F5</kbd> plays (the selection if there is one, otherwise all the text), <kbd>F6</kbd> pauses and resumes, <kbd>F7</kbd> stops. A change to the voice, rate or volume applies the next time you play.</p>
+    <p>Text goes straight to the engine, so commands work, as in DECtalk:</p>
+    <ul>
+      <li><code>[:vs]</code>, <code>[:vb]</code>, <code>[:vg]</code>, <code>[:vd]</code>, <code>[:vt]</code> change to Steve, Brittany, Gary, David or Taylor.</li>
+      <li><code>[:speed 300]</code> sets words per minute, 30 to 1920; <code>[:volume 50]</code> the volume.</li>
+      <li><code>[:cv pi 150 hs 110 br 40]</code> customizes pitch, head size, breathiness and more.</li>
+      <li><code>[:phone klattara enable]</code> lets you write sounds in ARPAbet, such as <code>[HH AH0 L OW1]</code>, and sing notes: <code>[AA1&lt;400,20&gt;]</code> sings note 20 for 400 ms.</li>
+      <li><code>[:reset]</code> goes back to how the engine starts.</li>
+    </ul>
+    <p>Klattara is open source: <a href="https://github.com/dgomez42/Klattara">github.com/dgomez42/Klattara</a>.</p>
+  </details>
+</main>
+<script src="klattpad.js"></script>
+</body>
+</html>

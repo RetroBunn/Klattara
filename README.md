@@ -61,6 +61,8 @@ You find these in NVDA's Voice settings, opened with NVDA+Control+V.
 
 KlattPad is a window for typing text and hearing Klattara speak it. It is a plain Windows program, klattpad.exe, that needs nothing else installed, and it is built from standard Windows controls so that screen readers can read all of it.
 
+KlattPad also runs in any web browser, on a Mac, Linux, a Chromebook or a phone: see src/plat/web. It has the same controls, plus a choice of sampling rate.
+
 The window has a multi-line edit field on the left. On the right, from top to bottom, are the Voice box and the Rate and Volume sliders, and along the bottom are the Play, Pause and Stop buttons. The Rate slider works as the NVDA add-on's does, with 15 as normal, and the Volume slider starts at full.
 
 - F5 plays. With text selected, it plays the selection, and otherwise all the text. A change to the voice, rate or volume applies the next time you press Play. If speech is paused, F5 resumes it.
@@ -307,6 +309,7 @@ The tools in src/tools measure how clear the voice is, using a speech recognizer
 - src/engine: the speech engine, as a Rust library, with examples.
 - src/plat/windows: klattara.dll and its C header.
 - src/plat/klattpad: KlattPad and its tests.
+- src/plat/web: KlattPad on the web, with the engine as WebAssembly.
 - src/plat/nvda: the NVDA add-on, its build script and its tests.
 - src/data: the pronouncing dictionary, the hand-written additions to it, the letter-to-sound model and the homograph table.
 - src/tools: Python tools for measuring clarity and for rebuilding the data.
