@@ -91,6 +91,34 @@ _DISCARD_CALLBACK = KLATTARA_AUDIO_CALLBACK(_discardAudio)
 # richness setting cannot, as its steps are 0.007 of open quotient.
 # Smoothness is the [:cv] sm value that reproduces the voice's spectral tilt.
 # Flutter is not here: it is off unless the user turns it on.
+# The rest of each voice's own [:cv] settings, in the same voice order: the
+# voicing, frication, aspiration and nasal levels (percent of normal), then
+# F4, its bandwidth, F5, its bandwidth, F6 and its bandwidth in hertz, where 0
+# means automatic (the engine's own, following head size and gender). From
+# src/plat/shared/voice_settings.rs, which the Mac and Android apps show.
+VOICE_EXTRA_DEFAULTS = (
+	(100, 100, 100, 100, 0, 0, 0, 0, 0, 0),
+	(100, 100, 100, 100, 0, 0, 0, 0, 0, 0),
+	(100, 100, 100, 100, 3400, 300, 3650, 300, 5600, 0),
+	(100, 100, 100, 100, 3450, 340, 4100, 380, 0, 0),
+	(100, 100, 100, 100, 0, 0, 0, 0, 0, 0),
+)
+# Their settings: id, [:cv] code, label, lowest real value (below it, 0, is
+# automatic), highest, step. The levels have no automatic.
+EXTRA_SETTINGS = (
+	("voicingLevel", "vvl", "&Voicing level", 0, 200, 5),
+	("fricationLevel", "fvl", "Frication le&vel", 0, 200, 5),
+	("aspirationLevel", "avl", "Aspiration leve&l", 0, 200, 5),
+	("nasalLevel", "nvl", "&Nasal level", 0, 200, 5),
+	("f4", "f4", "F&4 in hertz, 0 automatic", 2000, 6000, 50),
+	("f4Bandwidth", "b4", "F4 bandwidth in hertz, 0 automatic", 100, 4000, 10),
+	("f5", "f5", "F&5 in hertz, 0 automatic", 2500, 6000, 50),
+	("f5Bandwidth", "b5", "F5 bandwidth in hertz, 0 automatic", 100, 4000, 10),
+	("f6", "f6", "F&6 in hertz, 0 automatic", 3000, 9000, 50),
+	("f6Bandwidth", "b6", "F6 bandwidth in hertz, 0 automatic", 100, 4000, 10),
+)
+AUTOMATIC_CODES = {"f4", "b4", "f5", "b5", "f6", "b6"}
+
 VOICE_DEFAULTS = (
 	(100, 0, 0, 55, 0, 18, 18, 32, 40, 0, False),
 	(100, 0, 36, 65, 12, 12, 16, 36, 58, 65, True),
@@ -395,6 +423,29 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 		minVal=0,
 		maxVal=100,
 	)
+	_richnessSetting = NumericDriverSetting(
+		"richness",
+		# Translators: Label for a slider in the voice settings. More is
+		# thinner and buzzier, less fuller: the open quotient, from the other
+		# end, as the engine's [:cv] rc sets it.
+		_("Ric&hness"),
+		defaultVal=50,
+		minVal=0,
+		maxVal=100,
+	)
+	_extraSettings = tuple(
+		NumericDriverSetting(
+			setting_id,
+			_(label),
+			defaultVal=VOICE_EXTRA_DEFAULTS[0][i],
+			minVal=0,
+			maxVal=high,
+			minStep=step,
+			normalStep=step,
+			largeStep=step * 10,
+		)
+		for i, (setting_id, code, label, low, high, step) in enumerate(EXTRA_SETTINGS)
+	)
 	_sampleRateSetting = DriverSetting(
 		"sampleRate",
 		# Translators: Label for a combo box in the voice settings. The rate
@@ -427,6 +478,8 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 		_stressRiseSetting,
 		_quicknessSetting,
 		_laxBreathinessSetting,
+		_richnessSetting,
+	) + _extraSettings + (
 		_sampleRateSetting,
 	)
 	supportedCommands = {
@@ -485,6 +538,7 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 			self._laxBreathiness,
 			self._femaleVocalTract,
 		) = VOICE_DEFAULTS[0]
+		self._extra = dict(zip((e[0] for e in EXTRA_SETTINGS), VOICE_EXTRA_DEFAULTS[0]))
 		self._ensureAudio()
 		if not self._engine:
 			raise RuntimeError("Klattara could not create an engine")
@@ -628,6 +682,7 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 			self._laxBreathiness,
 			self._femaleVocalTract,
 		) = VOICE_DEFAULTS[voice]
+		self._extra = dict(zip((e[0] for e in EXTRA_SETTINGS), VOICE_EXTRA_DEFAULTS[voice]))
 
 	# Settings are percentages, as NVDA keeps them. The speech thread reads
 	# them before each piece of text, so only that thread touches the engine.
@@ -781,6 +836,41 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 	def _set_laxBreathiness(self, value):
 		self._laxBreathiness = value
 
+	# A getter and setter for each setting in EXTRA_SETTINGS (_get_voicingLevel,
+	# _set_voicingLevel, ...), made here in the class body: NVDA turns _get_ and
+	# _set_ methods into properties as the class is created, so ones added
+	# afterwards would not exist for its settings dialog, and saving would fail.
+	# Values are kept whole and in range, so NVDA can always save them.
+	def _extraGetter(setting_id, high):
+		return lambda self: int(min(high, max(0, round(self._extra[setting_id]))))
+
+	def _extraSetter(setting_id, high):
+		def setter(self, value):
+			self._extra[setting_id] = int(min(high, max(0, round(value))))
+		return setter
+
+	for _id, _code, _label, _low, _high, _step in EXTRA_SETTINGS:
+		vars()[f"_get_{_id}"] = _extraGetter(_id, _high)
+		vars()[f"_set_{_id}"] = _extraSetter(_id, _high)
+	del _id, _code, _label, _low, _high, _step, _extraGetter, _extraSetter
+
+	# Richness is the open quotient from the other end, as [:cv] rc sets it:
+	# 0 is an open quotient of 90 percent, 100 one of 20.
+	def _get_richness(self):
+		return int(min(100, max(0, round((90 - self._openQuotient) / 0.7))))
+
+	def _set_richness(self, value):
+		self._openQuotient = int(min(90, max(20, round(90 - 0.7 * value))))
+
+	def _extraCommand(self):
+		parts = []
+		for setting_id, code, label, low, high, step in EXTRA_SETTINGS:
+			value = self._extra[setting_id]
+			if code in AUTOMATIC_CODES and value < low:
+				continue  # automatic: the engine's own
+			parts.append(f"{code} {value}")
+		return " ".join(parts)
+
 	def _get_sampleRate(self):
 		return str(self._sampleRate)
 
@@ -932,7 +1022,7 @@ class SynthDriver(synthDriverHandler.SynthDriver):
 			f"[:cv hs {self._headSize} rg {self._roughness} br {self._breathiness} "
 			f"oq {self._openQuotient} sm {self._smoothness} fl {self._flutter} "
 			f"fa {self._baselineFall} ha {self._hatRise} st {self._stressRise} "
-			f"qk {self._quickness} lx {self._laxBreathiness}]"
+			f"qk {self._quickness} lx {self._laxBreathiness} {self._extraCommand()}]"
 		)
 		lib.klattara_speak(engine, custom.encode("utf-8"), KLATTARA_READ_TEXT, _DISCARD_CALLBACK, None)
 		self._speaking = generation

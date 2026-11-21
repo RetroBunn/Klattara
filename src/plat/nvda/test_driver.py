@@ -869,7 +869,7 @@ def main():
                 f"[:cv hs {synth.headSize} rg {synth.roughness} br {synth.breathiness} "
                 f"oq {synth.openQuotient} sm {synth.smoothness} fl {synth.flutter} "
                 f"fa {synth.baselineFall} ha {synth.hatRise} st {synth.stressRise} "
-                f"qk {synth.quickness} lx {synth.laxBreathiness}]"
+                f"qk {synth.quickness} lx {synth.laxBreathiness} {synth._extraCommand()}]"
             ).encode("utf-8")
 
         def spoken():
